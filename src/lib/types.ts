@@ -34,6 +34,7 @@ export type Group = {
 };
 
 export type LeaderboardRow = {
+  userId: number;
   rank: number;
   name: string;
   initials: string;
@@ -42,4 +43,9 @@ export type LeaderboardRow = {
   exactScores: number;
   predictionCount: number;
   isMe?: boolean;
+};
+
+export type MemberPredictionsResponse = {
+  member: AuthUser;
+  predictions: Match[];
 };

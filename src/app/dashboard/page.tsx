@@ -6,21 +6,85 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Award, CheckCircle2, Crown, KeyRound, Medal, Minus, TrendingDown, TrendingUp, Trophy, Users } from "lucide-react";
 
 import { AppNavbar } from "@/components/AppNavbar";
+import { MemberPredictionsModal } from "@/components/MemberPredictionsModal";
 import { TeamFlag } from "@/components/TeamFlag";
-import { fetchGroupLeaderboard, fetchMatches, fetchMe, fetchMyGroups, getApiErrorMessage } from "@/lib/api";
+import { ApiError, fetchGroupLeaderboard, fetchMatches, fetchMe, fetchMyGroups, getApiErrorMessage } from "@/lib/api";
 import { clearActiveGroup, clearSession, getActiveGroup, getSession, setActiveGroup, setSession } from "@/lib/auth";
 import type { Group, LeaderboardRow, Match } from "@/lib/types";
+
+const DEFAULT_REFRESH_INTERVAL_MS = 8_000;
+const LIVE_REFRESH_INTERVAL_MS = 5_000;
+const UPCOMING_PREVIEW_SESSION_KEY = "wow_dashboard_upcoming_matches";
+
+function sortMatchesByKickoff(matches: Match[]) {
+  return [...matches].sort((a, b) => Date.parse(a.kickoffAt) - Date.parse(b.kickoffAt));
+}
+
+function selectUpcomingPreviewMatches(matches: Match[]) {
+  const upcomingMatches = sortMatchesByKickoff(matches.filter((match) => match.status === "upcoming"));
+  if (typeof window === "undefined") {
+    return upcomingMatches.slice(0, 3);
+  }
+
+  const storedIds = window.sessionStorage.getItem(UPCOMING_PREVIEW_SESSION_KEY);
+  const parsedIds = storedIds ? storedIds.split(",").filter(Boolean) : [];
+  const upcomingById = new Map(upcomingMatches.map((match) => [match.id, match]));
+
+  const selected: Match[] = [];
+  const seenIds = new Set<string>();
+
+  parsedIds.forEach((id) => {
+    const match = upcomingById.get(id);
+    if (match && !seenIds.has(id)) {
+      selected.push(match);
+      seenIds.add(id);
+    }
+  });
+
+  upcomingMatches.forEach((match) => {
+    if (selected.length >= 3 || seenIds.has(match.id)) {
+      return;
+    }
+
+    selected.push(match);
+    seenIds.add(match.id);
+  });
+
+  return selected;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
   const [group, setGroup] = useState<Group | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
+  const [selectedMember, setSelectedMember] = useState<LeaderboardRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
+    let refreshTimer: number | null = null;
+
+    const scheduleRefresh = (matchesToCheck: Match[]) => {
+      if (cancelled) {
+        return;
+      }
+
+      const refreshInterval = matchesToCheck.some((match) => match.status === "live") ? LIVE_REFRESH_INTERVAL_MS : DEFAULT_REFRESH_INTERVAL_MS;
+      refreshTimer = window.setTimeout(() => {
+        loadDashboard().catch((err) => {
+          if (!cancelled) {
+            setError(getApiErrorMessage(err));
+            if (err instanceof ApiError && err.status === 401) {
+              clearSession();
+              clearActiveGroup();
+              router.push("/");
+            }
+          }
+        });
+      }, refreshInterval);
+    };
 
     const loadDashboard = async () => {
       if (!getSession()) {
@@ -52,15 +116,19 @@ export default function DashboardPage() {
       setGroup(response.group);
       setLeaderboard(response.leaderboard);
       setMatches(matchesResponse.matches);
+      setError("");
+      scheduleRefresh(matchesResponse.matches);
     };
 
     loadDashboard()
       .catch((err) => {
         if (!cancelled) {
-          clearSession();
-          clearActiveGroup();
           setError(getApiErrorMessage(err));
-          router.push("/");
+          if (err instanceof ApiError && err.status === 401) {
+            clearSession();
+            clearActiveGroup();
+            router.push("/");
+          }
         }
       })
       .finally(() => {
@@ -71,6 +139,9 @@ export default function DashboardPage() {
 
     return () => {
       cancelled = true;
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
     };
   }, [router]);
 
@@ -82,7 +153,7 @@ export default function DashboardPage() {
         {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="grid gap-8 lg:grid-cols-3">
           <div className="space-y-8 lg:col-span-2">
-            <LeaderboardCard group={group} leaderboard={leaderboard} loading={loading} />
+            <LeaderboardCard group={group} leaderboard={leaderboard} loading={loading} onSelectMember={setSelectedMember} />
           </div>
           <div className="space-y-8">
             <UpcomingPreview matches={matches} />
@@ -90,6 +161,7 @@ export default function DashboardPage() {
           </div>
         </div>
       </main>
+      {group && selectedMember ? <MemberPredictionsModal groupId={group.id} memberId={selectedMember.userId} onClose={() => setSelectedMember(null)} /> : null}
     </div>
   );
 }
@@ -157,7 +229,7 @@ function Stat({ label, value, hint, accent }: { label: string; value: string; hi
   );
 }
 
-function LeaderboardCard({ group, leaderboard, loading }: { group: Group | null; leaderboard: LeaderboardRow[]; loading: boolean }) {
+function LeaderboardCard({ group, leaderboard, loading, onSelectMember }: { group: Group | null; leaderboard: LeaderboardRow[]; loading: boolean; onSelectMember: (member: LeaderboardRow) => void }) {
   return (
     <section className="rounded-3xl border border-border bg-card p-6 shadow-card">
       <div className="mb-5 flex items-end justify-between">
@@ -167,28 +239,28 @@ function LeaderboardCard({ group, leaderboard, loading }: { group: Group | null;
         </div>
       </div>
 
-      {loading ? <div className="rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">Loading leaderboard...</div> : <div className="space-y-1">{leaderboard.map((row) => <LeaderboardEntry key={`${row.rank}-${row.name}`} row={row} />)}</div>}
+      {loading ? <div className="rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">Loading leaderboard...</div> : <div className="space-y-1">{leaderboard.map((row) => <LeaderboardEntry key={`${row.rank}-${row.name}`} row={row} onOpen={() => onSelectMember(row)} />)}</div>}
     </section>
   );
 }
 
-function LeaderboardEntry({ row }: { row: LeaderboardRow }) {
+function LeaderboardEntry({ row, onOpen }: { row: LeaderboardRow; onOpen: () => void }) {
   const podium = row.rank <= 3;
   const podiumIcon = row.rank === 1 ? Crown : row.rank === 2 ? Medal : Award;
   const PodiumIcon = podiumIcon;
   const podiumColor = row.rank === 1 ? "text-gold" : row.rank === 2 ? "text-muted-foreground" : "text-warning";
 
   return (
-    <div className={`flex items-center gap-4 rounded-2xl px-3 py-3 transition ${row.isMe ? "bg-gold/10 ring-1 ring-gold/40" : "hover:bg-muted/60"}`}>
+    <button type="button" onClick={onOpen} className={`flex w-full items-center gap-4 rounded-2xl px-3 py-3 text-left transition ${row.isMe ? "bg-gold/10 ring-1 ring-gold/40" : "hover:bg-muted/60"}`}>
       <div className="flex w-10 items-center justify-center">{podium ? <PodiumIcon className={`h-5 w-5 ${podiumColor}`} strokeWidth={2.5} /> : <span className="text-sm font-semibold text-muted-foreground">{row.rank}</span>}</div>
       <div className="grid h-9 w-9 place-items-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">{row.initials}</div>
       <div className="flex-1">
         <div className="text-sm font-semibold">{row.name} {row.isMe && <span className="ml-1.5 rounded-md bg-gold px-1.5 py-0.5 text-[10px] font-bold uppercase text-gold-foreground">You</span>}</div>
-        <div className="text-xs text-muted-foreground">{row.predictionCount} predictions submitted</div>
+        <div className="text-xs text-muted-foreground">{row.predictionCount} predictions submitted · Click to view locked picks</div>
       </div>
       <Movement value={row.movement} />
       <div className="w-16 text-right text-base font-semibold tabular-nums">{row.points} <span className="text-xs font-normal text-muted-foreground">pts</span></div>
-    </div>
+    </button>
   );
 }
 
@@ -199,7 +271,16 @@ function Movement({ value }: { value: number }) {
 }
 
 function UpcomingPreview({ matches }: { matches: Match[] }) {
-  const next = matches.filter((match) => match.status !== "finished").slice(0, 3);
+  const [next, setNext] = useState<Match[]>([]);
+
+  useEffect(() => {
+    const selectedMatches = selectUpcomingPreviewMatches(matches);
+    setNext(selectedMatches);
+
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(UPCOMING_PREVIEW_SESSION_KEY, selectedMatches.map((match) => match.id).join(","));
+    }
+  }, [matches]);
 
   return (
     <section className="rounded-3xl border border-border bg-card p-6 shadow-card">

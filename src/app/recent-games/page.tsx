@@ -12,6 +12,9 @@ import { fetchMatches, fetchMe, getApiErrorMessage } from "@/lib/api";
 import { clearActiveGroup, clearSession, getSession, setSession } from "@/lib/auth";
 import type { Match } from "@/lib/types";
 
+const DEFAULT_REFRESH_INTERVAL_MS = 8_000;
+const LIVE_REFRESH_INTERVAL_MS = 5_000;
+
 export default function RecentGamesPage() {
   const router = useRouter();
   const [active, setActive] = useState<Match | null>(null);
@@ -20,6 +23,25 @@ export default function RecentGamesPage() {
 
   useEffect(() => {
     let cancelled = false;
+    let refreshTimer: number | null = null;
+
+    const scheduleRefresh = (matches: Match[]) => {
+      if (cancelled) {
+        return;
+      }
+
+      const refreshInterval = matches.some((match) => match.status === "live") ? LIVE_REFRESH_INTERVAL_MS : DEFAULT_REFRESH_INTERVAL_MS;
+      refreshTimer = window.setTimeout(() => {
+        loadMatches().catch((err) => {
+          if (!cancelled) {
+            clearSession();
+            clearActiveGroup();
+            setError(getApiErrorMessage(err));
+            router.push("/");
+          }
+        });
+      }, refreshInterval);
+    };
 
     const loadMatches = async () => {
       if (!getSession()) {
@@ -31,6 +53,8 @@ export default function RecentGamesPage() {
       const response = await fetchMatches();
       if (!cancelled) {
         setMatches(response.matches);
+        setError("");
+        scheduleRefresh(response.matches);
       }
     };
 
@@ -45,6 +69,9 @@ export default function RecentGamesPage() {
 
     return () => {
       cancelled = true;
+      if (refreshTimer !== null) {
+        window.clearTimeout(refreshTimer);
+      }
     };
   }, [router]);
 

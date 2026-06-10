@@ -9,7 +9,6 @@ import trophyHero from "@/assets/trophy-hero.jpg";
 import {
   fetchMe,
   fetchMyGroups,
-  forgotPassword,
   getApiErrorMessage,
   getConfiguredPublicAppOrigin,
   getPreferredApiBase,
@@ -20,7 +19,7 @@ import { BRAND_SUBTITLE, BRAND_TITLE } from "@/lib/branding";
 import { clearActiveGroup, clearSession, setActiveGroup, setSession } from "@/lib/auth";
 
 export default function AuthPage() {
-  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -114,7 +113,7 @@ export default function AuthPage() {
     const baseOrigin = publicAppOrigin || getGoogleBrowserOrigin(window.location);
     const returnTo = `${baseOrigin}/`;
     const query = new URLSearchParams({ return_to: returnTo }).toString();
-    const apiBase = publicAppOrigin || getGoogleApiBase(window.location, baseOrigin);
+    const apiBase = getGoogleApiBase(window.location, baseOrigin);
     window.location.assign(`${apiBase}/api/auth/google/start?${query}`);
   };
 
@@ -147,11 +146,6 @@ export default function AuthPage() {
       } else if (mode === "signup") {
         const session = await signup({ name, email, password });
         await completeAuth(session);
-      } else {
-        const response = await forgotPassword({ email, new_password: password });
-        setMode("signin");
-        setPassword("");
-        setSuccess(response.message);
       }
     } catch (err) {
       setError(getApiErrorMessage(err));
@@ -160,15 +154,10 @@ export default function AuthPage() {
     }
   };
 
-  const switchMode = (nextMode: "signin" | "signup" | "forgot") => {
+  const switchMode = (nextMode: "signin" | "signup") => {
     setError("");
     setSuccess("");
     setMode(nextMode);
-
-    if (mode === "forgot" && nextMode === "signin") {
-      setEmail("");
-      setPassword("");
-    }
   };
 
   return (
@@ -223,44 +212,35 @@ export default function AuthPage() {
               <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{BRAND_SUBTITLE}</div>
             </div>
           </div>
-          <h2 className="text-2xl font-semibold tracking-tight">{mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Reset password"}</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">{mode === "signin" ? "Sign in" : "Create account"}</h2>
           <p className="mt-2 text-sm text-muted-foreground">
             {mode === "signin"
               ? "Sign in to access the World Cup Prediction League."
-              : mode === "signup"
-                ? "Create your account to start predicting."
-                : "Enter your email and choose a new password."}
+              : "Create your account to start predicting."}
           </p>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
             {mode === "signup" && <Field label="Full name" type="text" value={name} onChange={(e) => setName(e.target.value)} required />}
             <Field label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <Field label={mode === "forgot" ? "New password" : "Password"} type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <Field label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
 
             {success && <p className="text-sm text-success">{success}</p>}
             {error && <p className="text-sm text-destructive">{error}</p>}
 
             <button type="submit" disabled={submitting} className="mt-2 inline-flex w-full items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-95">
-              {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Reset password"}
+              {submitting ? "Please wait..." : mode === "signin" ? "Sign in" : "Create account"}
             </button>
 
-            {mode !== "forgot" && (
-              <>
-                <button type="button" onClick={handleGoogleContinue} disabled={submitting || !googleOAuthSupported} className="inline-flex w-full items-center justify-center gap-3 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70">
-                  <GoogleIcon />
-                  Continue with Google
-                </button>
-                {!googleOAuthSupported && <p className="text-xs text-muted-foreground">Google sign-in needs `localhost`, an HTTPS domain, or `NEXT_PUBLIC_APP_ORIGIN`. Use email/password from this device.</p>}
-              </>
-            )}
+            <button type="button" onClick={handleGoogleContinue} disabled={submitting || !googleOAuthSupported} className="inline-flex w-full items-center justify-center gap-3 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70">
+              <GoogleIcon />
+              Continue with Google
+            </button>
+            {!googleOAuthSupported && <p className="text-xs text-muted-foreground">Google sign-in needs `localhost`, an HTTPS domain, or `NEXT_PUBLIC_APP_ORIGIN`. Use email/password from this device.</p>}
           </form>
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
             {mode === "signin" ? (
-              <>
-                <button type="button" onClick={() => switchMode("forgot")} className="text-muted-foreground hover:text-foreground">Forgot password?</button>
-                <button type="button" onClick={() => switchMode("signup")} className="font-medium text-foreground">Create account</button>
-              </>
+              <button type="button" onClick={() => switchMode("signup")} className="font-medium text-foreground">Create account</button>
             ) : (
               <button type="button" onClick={() => switchMode("signin")} className="font-medium text-foreground">Back to sign in</button>
             )}

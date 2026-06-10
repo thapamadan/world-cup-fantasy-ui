@@ -1,5 +1,15 @@
 import { getSession } from "@/lib/auth";
-import type { AuthSession, Group, LeaderboardRow, Match } from "@/lib/types";
+import type { AuthSession, Group, LeaderboardRow, Match, MemberPredictionsResponse } from "@/lib/types";
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 function normalizeOrigin(origin: string | undefined) {
   return origin?.trim().replace(/\/$/, "") ?? "";
@@ -92,7 +102,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
-        throw new Error(payload ? normalizeApiDetail(payload.detail) : `${response.status} ${response.statusText}`);
+        throw new ApiError(response.status, payload ? normalizeApiDetail(payload.detail) : `${response.status} ${response.statusText}`);
       }
 
       return response.json() as Promise<T>;
@@ -181,4 +191,8 @@ export async function fetchMyGroups() {
 
 export async function fetchGroupLeaderboard(groupId: number) {
   return apiFetch<{ group: Group; leaderboard: LeaderboardRow[] }>(`/api/groups/${groupId}/leaderboard`);
+}
+
+export async function fetchGroupMemberPredictions(groupId: number, memberId: number) {
+  return apiFetch<MemberPredictionsResponse>(`/api/groups/${groupId}/members/${memberId}/predictions`);
 }
