@@ -1,10 +1,10 @@
-# WOW World Cup Prediction & Fantasy UI 🏆
+# World Cup Prediction & Fantasy UI 
 
-Welcome to the frontend repository for the **WOW World Cup Prediction League**, a premium-grade, interactive web application where users can predict World Cup match scores, create private groups, and compete for the top spot on the global and group leaderboards.
+Welcome to the frontend repository for the ** World Cup Prediction League**, a premium-grade, interactive web application where users can predict World Cup match scores, create private groups, and compete for the top spot on the global and group leaderboards.
 
 ---
 
-## 🌟 Features
+## Features
 
 - **Match Score Predictions:** Predict exact scores or correct winners of upcoming World Cup matches.
 - **Dynamic Leaderboard:** Climb the leaderboard with points awarded based on prediction accuracy (e.g., 5 points for exact score, 1 point for correct winner).
@@ -16,7 +16,7 @@ Welcome to the frontend repository for the **WOW World Cup Prediction League**, 
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Core Framework:** [Next.js](https://nextjs.org/) (v15.3.5) with [React](https://react.dev/) (v19)
 - **Styling:** [Tailwind CSS](https://tailwindcss.com/) (v4.2.1) + [tw-animate-css](https://www.npmjs.com/package/tw-animate-css)
@@ -27,7 +27,7 @@ Welcome to the frontend repository for the **WOW World Cup Prediction League**, 
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```text
 ├── src/
@@ -45,7 +45,7 @@ Welcome to the frontend repository for the **WOW World Cup Prediction League**, 
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -91,7 +91,7 @@ Ensure you have [Node.js](https://nodejs.org/) (v18+) or [Bun](https://bun.sh/) 
 
 ---
 
-## 🔧 Available Scripts
+## Available Scripts
 
 In the project directory, you can run:
 

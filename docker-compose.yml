@@ -1,0 +1,7 @@
+services:
+  frontend:
+    image: ghcr.io/thapamadan/world-cup-fantasy-ui:latest
+    container_name: world-cup-fantasy-ui
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
