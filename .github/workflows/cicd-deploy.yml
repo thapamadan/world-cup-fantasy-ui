@@ -47,8 +47,6 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_BASE_URL=${{ vars.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000' }}
             NEXT_PUBLIC_APP_ORIGIN=${{ vars.NEXT_PUBLIC_APP_ORIGIN || 'http://localhost:3000' }}
-            FOOTBALL_DATA_API_HEADER=${{ vars.FOOTBALL_DATA_API_HEADER }}
-            FOOTBALL_DATA_API_KEY=${{ vars.FOOTBALL_DATA_API_KEY }}
 
   deploy:
     name: Deploy to EC2 Ubuntu Server
