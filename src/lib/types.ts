@@ -10,6 +10,7 @@ export type Match = {
   status: "upcoming" | "live" | "finished";
   kickoffAt: string;
   predicted?: { home: number; away: number; winner?: "home" | "away" | "draw" };
+  submitted?: boolean;
   result?: { home: number; away: number };
   pointsEarned?: number;
 };
