@@ -3,7 +3,8 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import {
   ArrowRight,
   Award,
@@ -23,13 +24,14 @@ const DashboardUpcomingPreview = dynamic(
   () => import("@/components/DashboardUpcomingPreview").then((mod) => mod.DashboardUpcomingPreview),
   { ssr: false },
 );
+import { WinnerPredictionCard } from "@/components/WinnerPredictionCard";
 import { TeamFlag } from "@/components/TeamFlag";
 import {
   ApiError,
   fetchGroupLeaderboard,
-  fetchMatches,
   fetchMe,
   fetchMyGroups,
+  fetchMyPredictions,
   getApiErrorMessage,
 } from "@/lib/api";
 import {
@@ -40,13 +42,19 @@ import {
   setActiveGroup,
   setSession,
 } from "@/lib/auth";
-import type { Group, LeaderboardRow, Match } from "@/lib/types";
+import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
+import { MY_PREDICTIONS_CACHE_KEY } from "@/lib/predictions-cache";
+import type { Group, LeaderboardRow, Match, MemberPrediction } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
 const DEFAULT_REFRESH_INTERVAL_MS = 8_000;
 const MATCH_PREVIEW_REFRESH_INTERVAL_MS = 60_000;
 const LIVE_MATCH_PREVIEW_REFRESH_INTERVAL_MS = 15_000;
 const LEADERBOARD_CACHE_STORAGE_KEY = "wow_dashboard_leaderboard_cache";
+
+function getTodayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 type LeaderboardCache = {
   group: Group;
@@ -90,6 +98,24 @@ function buildLeaderboardRefreshSignature(matches: Match[]) {
     .join("|");
 }
 
+function mergePredictionsWithMatches(matches: Match[], predictions: MemberPrediction[]) {
+  const predictionMap = new Map(predictions.map((prediction) => [prediction.matchId, prediction]));
+
+  return matches.map((match) => {
+    const prediction = predictionMap.get(match.id);
+    if (!prediction) {
+      return match;
+    }
+
+    return {
+      ...match,
+      predicted: prediction.predicted,
+      pointsEarned: prediction.pointsEarned,
+      submitted: true,
+    };
+  });
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [group, setGroup] = useState<Group | null>(null);
@@ -99,6 +125,16 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [matchesLoading, setMatchesLoading] = useState(true);
   const [error, setError] = useState("");
+  const { data: predictionsData } = useSWR(MY_PREDICTIONS_CACHE_KEY, fetchMyPredictions, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    revalidateIfStale: false,
+  });
+
+  const previewMatches = useMemo(
+    () => mergePredictionsWithMatches(matches, predictionsData?.predictions ?? []),
+    [matches, predictionsData?.predictions],
+  );
 
   useEffect(() => {
     setCurrentName(getSession()?.user.name ?? "Player");
@@ -157,7 +193,7 @@ export default function DashboardPage() {
       matchesRefreshTimer = window.setTimeout(() => {
         loadMatchesPreview().catch((err) => {
           if (!cancelled) {
-            setError(getApiErrorMessage(err));
+            setError(getDirectMatchesErrorMessage(err));
           }
         });
       }, refreshInterval);
@@ -207,7 +243,7 @@ export default function DashboardPage() {
     };
 
     const loadMatchesPreview = async () => {
-      const matchesResponse = await fetchMatches();
+      const matchesResponse = await fetchMatchesFromProxy({ dateFrom: getTodayIsoDate() });
       if (cancelled) return;
 
       const nextSignature = buildLeaderboardRefreshSignature(matchesResponse.matches);
@@ -245,7 +281,7 @@ export default function DashboardPage() {
     loadMatchesPreview().catch((err) => {
       if (!cancelled) {
         setMatchesLoading(false);
-        setError(getApiErrorMessage(err));
+        setError(getDirectMatchesErrorMessage(err));
       }
     });
 
@@ -286,7 +322,8 @@ export default function DashboardPage() {
             />
           </div>
           <div className="space-y-8">
-            <DashboardUpcomingPreview matches={matches} loading={matchesLoading} />
+            <DashboardUpcomingPreview matches={previewMatches} loading={matchesLoading} />
+            <WinnerPredictionCard />
             <GroupInfoCard group={group} />
           </div>
         </div>

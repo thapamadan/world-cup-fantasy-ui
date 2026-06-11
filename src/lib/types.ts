@@ -15,6 +15,12 @@ export type Match = {
   pointsEarned?: number;
 };
 
+export type MemberPrediction = {
+  matchId: string;
+  predicted: { home: number; away: number; winner?: "home" | "away" | "draw" };
+  pointsEarned?: number;
+};
+
 export type AuthUser = {
   id: number;
   name: string;
@@ -48,5 +54,25 @@ export type LeaderboardRow = {
 
 export type MemberPredictionsResponse = {
   member: AuthUser;
-  predictions: Match[];
+  predictions: MemberPrediction[];
+};
+
+export type UserPredictionsResponse = {
+  predictions: MemberPrediction[];
+};
+
+export type TeamOption = {
+  name: string;
+  flag: string;
+};
+
+export type WinnerPrediction = {
+  teams: TeamOption[];
+  selectedTeam?: string | null;
+  selectedFlag?: string | null;
+  locked: boolean;
+  lockAt?: string | null;
+  winningTeam?: string | null;
+  winningFlag?: string | null;
+  pointsAwarded?: number | null;
 };

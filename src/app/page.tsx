@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Flame, Target, Trophy } from "lucide-react";
 
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import trophyHero from "@/assets/trophy-hero.jpg";
 import {
   fetchMe,
@@ -14,6 +15,7 @@ import {
   getConfiguredPublicAppOrigin,
   getPreferredApiBase,
   login,
+  sendPasswordResetOtp,
   signup,
 } from "@/lib/api";
 import { BRAND_SUBTITLE, BRAND_TITLE } from "@/lib/branding";
@@ -24,9 +26,12 @@ export default function AuthPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
   const router = useRouter();
   const configuredPublicAppOrigin = getConfiguredPublicAppOrigin();
   const googleOAuthSupported =
@@ -125,13 +130,20 @@ export default function AuthPage() {
     setError("");
     setSuccess("");
 
+    const trimmedEmail = email.trim();
+
     if (mode === "signup" && name.trim().length < 2) {
       setError("Full name must be at least 2 characters.");
       return;
     }
 
-    if (!email.includes("@")) {
+    if (!trimmedEmail.includes("@")) {
       setError("Enter a valid email address.");
+      return;
+    }
+
+    if (!password) {
+      setError(mode === "forgot" ? "Enter your new password." : "Enter your password.");
       return;
     }
 
@@ -140,19 +152,33 @@ export default function AuthPage() {
       return;
     }
 
+    if (mode === "forgot") {
+      if (!otpSent) {
+        setError("Send the OTP to your email before resetting your password.");
+        return;
+      }
+
+      if (otp.length !== 6) {
+        setError("Enter the 6-digit OTP sent to your email.");
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
       if (mode === "signin") {
-        const session = await login({ email, password });
+        const session = await login({ email: trimmedEmail, password });
         await completeAuth(session);
       } else if (mode === "forgot") {
-        const response = await forgotPassword({ email, new_password: password });
+        const response = await forgotPassword({ email: trimmedEmail, otp, new_password: password });
         setSuccess(response.message);
+        setOtp("");
         setPassword("");
+        setOtpSent(false);
         setMode("signin");
       } else if (mode === "signup") {
-        const session = await signup({ name, email, password });
+        const session = await signup({ name: name.trim(), email: trimmedEmail, password });
         await completeAuth(session);
       }
     } catch (err) {
@@ -165,7 +191,31 @@ export default function AuthPage() {
   const switchMode = (nextMode: "signin" | "signup" | "forgot") => {
     setError("");
     setSuccess("");
+    setOtp("");
+    setOtpSent(false);
     setMode(nextMode);
+  };
+
+  const handleSendOtp = async () => {
+    setError("");
+    setSuccess("");
+
+    if (!email.includes("@")) {
+      setError("Enter a valid email address.");
+      return;
+    }
+
+    setSendingOtp(true);
+
+    try {
+      const response = await sendPasswordResetOtp({ email });
+      setOtpSent(true);
+      setSuccess(response.message);
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+    } finally {
+      setSendingOtp(false);
+    }
   };
 
   return (
@@ -250,11 +300,11 @@ export default function AuthPage() {
             {mode === "signin"
               ? "Sign in to access the World Cup Prediction League."
               : mode === "forgot"
-                ? "Enter your email and choose a new password."
+                ? "Enter your email, request the OTP, and choose a new password."
                 : "Create your account to start predicting."}
           </p>
 
-          <form onSubmit={submit} className="mt-6 space-y-4">
+          <form noValidate onSubmit={submit} className="mt-6 space-y-4">
             {mode === "signup" && (
               <Field
                 label="Full name"
@@ -268,7 +318,13 @@ export default function AuthPage() {
               label="Email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (mode === "forgot") {
+                  setOtp("");
+                  setOtpSent(false);
+                }
+              }}
               required
             />
             <Field
@@ -278,6 +334,46 @@ export default function AuthPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+
+            {mode === "forgot" && (
+              <>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium text-foreground">OTP</span>
+                    <button
+                      type="button"
+                      onClick={handleSendOtp}
+                      disabled={sendingOtp || submitting}
+                      className="text-xs font-semibold text-primary disabled:opacity-60"
+                    >
+                      {sendingOtp ? "Sending..." : "Send OTP"}
+                    </button>
+                  </div>
+                  <InputOTP
+                    maxLength={6}
+                    value={otp}
+                    onChange={setOtp}
+                    pattern="^[0-9]+$"
+                    inputMode="numeric"
+                    containerClassName="justify-between"
+                  >
+                    <InputOTPGroup className="w-full justify-between gap-2">
+                      <InputOTPSlot index={0} className="h-12 w-12 rounded-xl border" />
+                      <InputOTPSlot index={1} className="h-12 w-12 rounded-xl border" />
+                      <InputOTPSlot index={2} className="h-12 w-12 rounded-xl border" />
+                      <InputOTPSlot index={3} className="h-12 w-12 rounded-xl border" />
+                      <InputOTPSlot index={4} className="h-12 w-12 rounded-xl border" />
+                      <InputOTPSlot index={5} className="h-12 w-12 rounded-xl border" />
+                    </InputOTPGroup>
+                  </InputOTP>
+                  <p className="text-xs text-muted-foreground">
+                    {otpSent
+                      ? "Enter the 6-digit code sent to your email before resetting your password."
+                      : "Send an OTP to your email, then enter the 6-digit code here."}
+                  </p>
+                </div>
+              </>
+            )}
 
             {success && <p className="text-sm text-success">{success}</p>}
             {error && <p className="text-sm text-destructive">{error}</p>}

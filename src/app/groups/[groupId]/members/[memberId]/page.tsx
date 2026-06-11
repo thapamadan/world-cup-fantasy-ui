@@ -2,55 +2,61 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { ArrowLeft, CheckCircle2, Lock } from "lucide-react";
+import useSWR from "swr";
 
 import { AppNavbar } from "@/components/AppNavbar";
 import { TeamFlag } from "@/components/TeamFlag";
-import { ApiError, fetchGroupMemberPredictions, fetchMe, getApiErrorMessage } from "@/lib/api";
+import {
+  ApiError,
+  fetchGroupMemberPredictions,
+  fetchMatches,
+  fetchMe,
+  getApiErrorMessage,
+} from "@/lib/api";
 import { clearActiveGroup, clearSession, getSession, setSession } from "@/lib/auth";
-import type { AuthUser, Match } from "@/lib/types";
+import {
+  getGroupMemberPredictionsCacheKey,
+  readMemberPredictionsCache,
+  writeMemberPredictionsCache,
+} from "@/lib/predictions-cache";
+import type { AuthUser, Match, MemberPrediction } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
-type MemberPredictionsCache = {
-  member: AuthUser;
-  predictions: Match[];
-};
+function sortPredictions(matches: Match[]) {
+  return [...matches].sort((left, right) => {
+    const leftKickoffAt = new Date(left.kickoffAt).getTime();
+    const rightKickoffAt = new Date(right.kickoffAt).getTime();
 
-function getMemberPredictionsCacheKey(groupId: number, memberId: number) {
-  return `wow_member_predictions_${groupId}_${memberId}`;
+    if (left.status === "finished" && right.status !== "finished") {
+      return 1;
+    }
+    if (left.status !== "finished" && right.status === "finished") {
+      return -1;
+    }
+    if (left.status === "finished" && right.status === "finished") {
+      return rightKickoffAt - leftKickoffAt;
+    }
+    return leftKickoffAt - rightKickoffAt;
+  });
 }
 
-function readMemberPredictionsCache(groupId: number, memberId: number) {
-  if (typeof window === "undefined") {
-    return null;
-  }
+function mergePredictionsWithMatches(matches: Match[], predictions: MemberPrediction[]) {
+  const predictionMap = new Map(predictions.map((prediction) => [prediction.matchId, prediction]));
 
-  const rawValue = window.sessionStorage.getItem(getMemberPredictionsCacheKey(groupId, memberId));
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(rawValue) as MemberPredictionsCache;
-  } catch {
-    window.sessionStorage.removeItem(getMemberPredictionsCacheKey(groupId, memberId));
-    return null;
-  }
-}
-
-function writeMemberPredictionsCache(
-  groupId: number,
-  memberId: number,
-  value: MemberPredictionsCache,
-) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.sessionStorage.setItem(
-    getMemberPredictionsCacheKey(groupId, memberId),
-    JSON.stringify(value),
+  return sortPredictions(
+    matches
+      .filter((match) => predictionMap.has(match.id))
+      .map((match) => {
+        const prediction = predictionMap.get(match.id)!;
+        return {
+          ...match,
+          predicted: prediction.predicted,
+          pointsEarned: prediction.pointsEarned,
+          submitted: true,
+        };
+      }),
   );
 }
 
@@ -66,67 +72,59 @@ export default function MemberPredictionsPage() {
   const router = useRouter();
   const groupId = Number(params.groupId);
   const memberId = Number(params.memberId);
-  const [member, setMember] = useState<AuthUser | null>(null);
-  const [predictions, setPredictions] = useState<Match[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const cachedResponse = readMemberPredictionsCache(groupId, memberId);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const cachedResponse = readMemberPredictionsCache(groupId, memberId);
-    if (cachedResponse) {
-      setMember(cachedResponse.member);
-      setPredictions(cachedResponse.predictions);
-      setLoading(false);
+    if (!getSession()) {
+      fetchMe()
+        .then((me) => {
+          setSession({ token: "cookie-session", user: me.user });
+        })
+        .catch(() => {
+          // The predictions request below is cookie-authenticated already.
+        });
     }
+  }, []);
 
-    const loadPredictions = async () => {
-      if (!getSession()) {
-        fetchMe()
-          .then((me) => {
-            if (!cancelled) {
-              setSession({ token: "cookie-session", user: me.user });
-            }
-          })
-          .catch(() => {
-            // The predictions request below is cookie-authenticated already.
-          });
-      }
+  const { data, error, isLoading } = useSWR(
+    getGroupMemberPredictionsCacheKey(groupId, memberId),
+    async () => {
+      const [response, matchesResponse] = await Promise.all([
+        fetchGroupMemberPredictions(groupId, memberId),
+        fetchMatches(),
+      ]);
 
-      const response = await fetchGroupMemberPredictions(groupId, memberId);
-      if (cancelled) return;
-
-      setMember(response.member);
-      setPredictions(response.predictions);
-      writeMemberPredictionsCache(groupId, memberId, {
+      const mergedPredictions = mergePredictionsWithMatches(
+        matchesResponse.matches,
+        response.predictions,
+      );
+      const nextData = {
         member: response.member,
-        predictions: response.predictions,
-      });
-      setError("");
-    };
+        predictions: mergedPredictions,
+      };
 
-    loadPredictions()
-      .catch((err) => {
-        if (!cancelled) {
-          setError(getApiErrorMessage(err));
-          if (err instanceof ApiError && err.status === 401) {
-            clearSession();
-            clearActiveGroup();
-            router.push("/");
-          }
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
+      writeMemberPredictionsCache(groupId, memberId, nextData);
+      return nextData;
+    },
+    {
+      fallbackData: cachedResponse ?? undefined,
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      revalidateIfStale: false,
+    },
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [groupId, memberId, router]);
+  useEffect(() => {
+    if (error instanceof ApiError && error.status === 401) {
+      clearSession();
+      clearActiveGroup();
+      router.push("/");
+    }
+  }, [error, router]);
+
+  const member: AuthUser | null = data?.member ?? null;
+  const predictions = data?.predictions ?? [];
+  const errorMessage = error ? getApiErrorMessage(error) : "";
 
   const isCurrentUser = getSession()?.user.id === memberId;
 
@@ -156,22 +154,22 @@ export default function MemberPredictionsPage() {
               ? "Upcoming and live predictions stay at the top. Finished games move below them automatically."
               : "Only matches predicted by this player are shown here, and only after the prediction locks 15 minutes before kickoff."}
           </p>
-          {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+          {errorMessage ? <p className="mt-3 text-sm text-destructive">{errorMessage}</p> : null}
         </header>
 
-        {loading ? (
+        {isLoading ? (
           <div className="rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">
             Loading predictions...
           </div>
         ) : null}
 
-        {!loading && !error && predictions.length === 0 ? (
+        {!isLoading && !errorMessage && predictions.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border bg-background/20 p-6 text-sm text-muted-foreground">
             {isCurrentUser ? "No predicted matches yet." : "No locked predictions to show yet."}
           </div>
         ) : null}
 
-        {!loading && !error && predictions.length > 0 ? (
+        {!isLoading && !errorMessage && predictions.length > 0 ? (
           <div className="space-y-3">
             {predictions.map((match) => {
               const matchTime = formatMatchDateTimeNepal(match.kickoffAt);
