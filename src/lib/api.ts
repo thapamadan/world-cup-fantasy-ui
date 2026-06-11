@@ -5,6 +5,8 @@ import type {
   LeaderboardRow,
   Match,
   MemberPredictionsResponse,
+  UserPredictionsResponse,
+  WinnerPrediction,
 } from "@/lib/types";
 
 export class ApiError extends Error {
@@ -78,7 +80,17 @@ function normalizeApiDetail(detail: unknown): string {
       .map((item) => {
         if (typeof item === "string") return item;
         if (item && typeof item === "object" && "msg" in item && typeof item.msg === "string") {
-          return item.msg;
+          const fieldPath =
+            "loc" in item && Array.isArray(item.loc)
+              ? item.loc
+                  .filter(
+                    (part: unknown): part is string | number =>
+                      typeof part === "string" || typeof part === "number",
+                  )
+                  .slice(1)
+                  .join(".")
+              : "";
+          return fieldPath ? `${fieldPath}: ${item.msg}` : item.msg;
         }
         return null;
       })
@@ -171,7 +183,14 @@ export async function fetchMe(token?: string | null) {
   }>("/api/me", { token });
 }
 
-export async function forgotPassword(input: { email: string; new_password: string }) {
+export async function sendPasswordResetOtp(input: { email: string }) {
+  return apiFetch<{ message: string }>("/api/auth/forgot-password/otp", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function forgotPassword(input: { email: string; otp: string; new_password: string }) {
   return apiFetch<{ message: string }>("/api/auth/forgot-password", {
     method: "POST",
     body: input,
@@ -187,6 +206,21 @@ export async function changePassword(input: { current_password: string; new_pass
 
 export async function fetchMatches() {
   return apiFetch<{ matches: Match[] }>("/api/matches");
+}
+
+export async function fetchWinnerPrediction() {
+  return apiFetch<WinnerPrediction>("/api/predictions/winner");
+}
+
+export async function fetchMyPredictions() {
+  return apiFetch<UserPredictionsResponse>("/api/predictions");
+}
+
+export async function saveWinnerPrediction(input: { team_name: string }) {
+  return apiFetch<{ message: string; prediction: WinnerPrediction }>("/api/predictions/winner", {
+    method: "POST",
+    body: input,
+  });
 }
 
 export async function savePrediction(input: {

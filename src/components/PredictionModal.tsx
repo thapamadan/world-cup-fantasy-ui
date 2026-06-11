@@ -26,9 +26,16 @@ function getWinnerLabel(
   return "Draw";
 }
 
+function getWinnerPickFromScore(home: number, away: number): "home" | "away" | "draw" {
+  if (home > away) return "home";
+  if (away > home) return "away";
+  return "draw";
+}
+
 function getPredictionPoints(match: Match) {
   if (typeof match.pointsEarned === "number") return match.pointsEarned;
   if (!match.predicted || !match.result) return 0;
+  // Exact score is not additive with correct outcome; it stays 3 total.
   if (match.predicted.home === match.result.home && match.predicted.away === match.result.away)
     return 3;
 
@@ -62,15 +69,13 @@ export function PredictionModal({
   const matchTime = formatMatchDateTimeNepal(match.kickoffAt);
   const [home, setHome] = useState(match.predicted?.home ?? 0);
   const [away, setAway] = useState(match.predicted?.away ?? 0);
-  const [winnerPick, setWinnerPick] = useState<"home" | "away" | "draw" | null>(
-    match.predicted?.winner ?? null,
-  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const finished = match.status === "finished" && !!match.result;
   const editingLocked = finished || Date.now() >= Date.parse(match.kickoffAt) - 15 * 60 * 1000;
   const scoreHome = finished && match.result ? match.result.home : home;
   const scoreAway = finished && match.result ? match.result.away : away;
+  const winnerPick = getWinnerPickFromScore(home, away);
   const predictedWinnerLabel = getWinnerLabel(
     match.home,
     match.away,
@@ -87,12 +92,6 @@ export function PredictionModal({
     try {
       if (editingLocked) {
         setError("Predictions lock 15 minutes before kickoff.");
-        setSaving(false);
-        return;
-      }
-
-      if (!winnerPick) {
-        setError("Choose whether the match will end in a home win, away win, or draw.");
         setSaving(false);
         return;
       }
@@ -155,21 +154,21 @@ export function PredictionModal({
             <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
-                onClick={() => setWinnerPick("home")}
+                disabled
                 className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${winnerPick === "home" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-muted"}`}
               >
                 {match.home}
               </button>
               <button
                 type="button"
-                onClick={() => setWinnerPick("draw")}
+                disabled
                 className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${winnerPick === "draw" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-muted"}`}
               >
                 Draw
               </button>
               <button
                 type="button"
-                onClick={() => setWinnerPick("away")}
+                disabled
                 className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${winnerPick === "away" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-muted"}`}
               >
                 {match.away}
