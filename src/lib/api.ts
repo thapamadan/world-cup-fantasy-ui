@@ -36,14 +36,14 @@ function getAuthHeaderToken(token: string | null | undefined) {
 function resolveApiBases() {
   const bases = new Set<string>();
 
-  if (typeof window !== "undefined") {
-    const { protocol, hostname, port } = window.location;
-    // Prefer the current host's backend directly.
-    bases.add(`${protocol}//${hostname}:8000`);
-  }
-
   if (process.env.NEXT_PUBLIC_API_BASE_URL) {
     bases.add(process.env.NEXT_PUBLIC_API_BASE_URL);
+  }
+
+  if (typeof window !== "undefined") {
+    const { protocol, hostname } = window.location;
+    // Prefer the current host's backend directly as fallback.
+    bases.add(`${protocol}//${hostname}:8000`);
   }
 
   bases.add("http://127.0.0.1:8000");
@@ -55,6 +55,9 @@ function resolveApiBases() {
 const API_BASES = resolveApiBases();
 
 export function getPreferredApiBase() {
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
   if (typeof window !== "undefined") {
     return `${window.location.protocol}//${window.location.hostname}:8000`;
   }
