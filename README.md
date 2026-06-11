@@ -7,7 +7,7 @@ Welcome to the frontend repository for the ** World Cup Prediction League**, a p
 ## Features
 
 - **Match Score Predictions:** Predict exact scores or correct winners of upcoming World Cup matches.
-- **Dynamic Leaderboard:** Climb the leaderboard with points awarded based on prediction accuracy (e.g., 5 points for exact score, 1 point for correct winner).
+- **Dynamic Leaderboard:** Climb the leaderboard with points awarded based on prediction accuracy (3 points for an exact score, 1 point for a correct outcome only).
 - **Private & Public Groups:** Create or join leagues/groups to compete with friends, colleagues, or communities.
 - **Streak & Daily Bonuses:** Track prediction streaks for daily bonus points.
 - **Seamless Authentication:** Sign in using traditional Email/Password or authenticate instantly via Google OAuth.

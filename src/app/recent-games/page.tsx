@@ -1,23 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 
 import { AppNavbar } from "@/components/AppNavbar";
 import { PredictionModal } from "@/components/PredictionModal";
 import { TeamFlag } from "@/components/TeamFlag";
-import { fetchMatches, fetchMe, getApiErrorMessage } from "@/lib/api";
-import { clearActiveGroup, clearSession, getSession, setSession } from "@/lib/auth";
+import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
 import type { Match } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
 const DEFAULT_REFRESH_INTERVAL_MS = 8_000;
 const LIVE_REFRESH_INTERVAL_MS = 5_000;
 
+function getTodayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function RecentGamesPage() {
-  const router = useRouter();
   const [active, setActive] = useState<Match | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [error, setError] = useState("");
@@ -37,23 +38,14 @@ export default function RecentGamesPage() {
       refreshTimer = window.setTimeout(() => {
         loadMatches().catch((err) => {
           if (!cancelled) {
-            clearSession();
-            clearActiveGroup();
-            setError(getApiErrorMessage(err));
-            router.push("/");
+            setError(getDirectMatchesErrorMessage(err));
           }
         });
       }, refreshInterval);
     };
 
     const loadMatches = async () => {
-      if (!getSession()) {
-        const me = await fetchMe();
-        if (cancelled) return;
-        setSession({ token: "cookie-session", user: me.user });
-      }
-
-      const response = await fetchMatches();
+      const response = await fetchMatchesFromProxy({ dateTo: getTodayIsoDate() });
       if (!cancelled) {
         setMatches(response.matches);
         setError("");
@@ -63,10 +55,7 @@ export default function RecentGamesPage() {
 
     loadMatches().catch((err) => {
       if (!cancelled) {
-        clearSession();
-        clearActiveGroup();
-        setError(getApiErrorMessage(err));
-        router.push("/");
+        setError(getDirectMatchesErrorMessage(err));
       }
     });
 
@@ -76,7 +65,7 @@ export default function RecentGamesPage() {
         window.clearTimeout(refreshTimer);
       }
     };
-  }, [router]);
+  }, []);
 
   const finishedMatches = useMemo(
     () =>

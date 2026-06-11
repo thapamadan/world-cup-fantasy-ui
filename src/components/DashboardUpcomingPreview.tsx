@@ -1,62 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 
 import { TeamFlag } from "@/components/TeamFlag";
 import type { Match } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
-const UPCOMING_PREVIEW_SESSION_KEY = "wow_dashboard_upcoming_matches";
-
-function sortMatchesByKickoff(matches: Match[]) {
-  return [...matches].sort((a, b) => Date.parse(a.kickoffAt) - Date.parse(b.kickoffAt));
-}
-
-function readUpcomingPreviewCache() {
-  const storedValue = window.sessionStorage.getItem(UPCOMING_PREVIEW_SESSION_KEY);
-  if (!storedValue) {
-    return [] as Match[];
-  }
-
-  try {
-    const parsedMatches = JSON.parse(storedValue) as Match[];
-    return parsedMatches.filter((match) => match.status === "upcoming").slice(0, 3);
-  } catch {
-    window.sessionStorage.removeItem(UPCOMING_PREVIEW_SESSION_KEY);
-    return [] as Match[];
-  }
-}
-
-function selectUpcomingPreviewMatches(matches: Match[]) {
-  const upcomingMatches = sortMatchesByKickoff(
-    matches.filter((match) => match.status === "upcoming"),
-  );
-  const parsedMatches = readUpcomingPreviewCache();
-  const upcomingById = new Map(upcomingMatches.map((match) => [match.id, match]));
-
-  const selected: Match[] = [];
-  const seenIds = new Set<string>();
-
-  parsedMatches.forEach((storedMatch) => {
-    const match = upcomingById.get(storedMatch.id);
-    if (match && !seenIds.has(match.id)) {
-      selected.push(match);
-      seenIds.add(match.id);
-    }
-  });
-
-  upcomingMatches.forEach((match) => {
-    if (selected.length >= 3 || seenIds.has(match.id)) {
-      return;
-    }
-
-    selected.push(match);
-    seenIds.add(match.id);
-  });
-
-  return selected.slice(0, 3);
+function getMatchStatusPriority(match: Match) {
+  if (match.status === "upcoming") return 0;
+  if (match.status === "live") return 1;
+  return 2;
 }
 
 export function DashboardUpcomingPreview({
@@ -66,19 +20,17 @@ export function DashboardUpcomingPreview({
   matches: Match[];
   loading: boolean;
 }) {
-  const [visibleMatches, setVisibleMatches] = useState<Match[]>(() =>
-    typeof window === "undefined" ? [] : readUpcomingPreviewCache(),
-  );
+  const visibleMatches = [...matches]
+    .filter((match) => match.status !== "finished")
+    .sort((a, b) => {
+      const statusDiff = getMatchStatusPriority(a) - getMatchStatusPriority(b);
+      if (statusDiff !== 0) {
+        return statusDiff;
+      }
 
-  useEffect(() => {
-    if (matches.length === 0) {
-      return;
-    }
-
-    const selectedMatches = selectUpcomingPreviewMatches(matches);
-    setVisibleMatches(selectedMatches);
-    window.sessionStorage.setItem(UPCOMING_PREVIEW_SESSION_KEY, JSON.stringify(selectedMatches));
-  }, [matches]);
+      return Date.parse(a.kickoffAt) - Date.parse(b.kickoffAt);
+    })
+    .slice(0, 3);
 
   const shouldShowLoading = loading && visibleMatches.length === 0;
 

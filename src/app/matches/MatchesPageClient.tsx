@@ -1,18 +1,30 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import useSWR, { mutate as globalMutate } from "swr";
+import { useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, Clock } from "lucide-react";
 
 import { AppNavbar } from "@/components/AppNavbar";
 import { PredictionModal } from "@/components/PredictionModal";
 import { TeamFlag } from "@/components/TeamFlag";
-import { fetchMatches, getApiErrorMessage } from "@/lib/api";
-import type { Match } from "@/lib/types";
+import { getActiveGroup, getSession } from "@/lib/auth";
+import { fetchMyPredictions, getApiErrorMessage } from "@/lib/api";
+import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
+import {
+  clearMemberPredictionsCache,
+  getGroupMemberPredictionsCacheKey,
+  MY_PREDICTIONS_CACHE_KEY,
+} from "@/lib/predictions-cache";
+import type { Match, MemberPrediction } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
 const DEFAULT_REFRESH_INTERVAL_MS = 8_000;
 const LIVE_REFRESH_INTERVAL_MS = 5_000;
+
+function getTodayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function getMatchStatusPriority(match: Match) {
   if (match.status === "upcoming") return 0;
@@ -33,6 +45,24 @@ function sortVisibleMatches(matches: Match[]) {
     });
 }
 
+function mergePredictionsWithMatches(matches: Match[], predictions: MemberPrediction[]) {
+  const predictionMap = new Map(predictions.map((prediction) => [prediction.matchId, prediction]));
+
+  return matches.map((match) => {
+    const prediction = predictionMap.get(match.id);
+    if (!prediction) {
+      return match;
+    }
+
+    return {
+      ...match,
+      predicted: prediction.predicted,
+      pointsEarned: prediction.pointsEarned,
+      submitted: true,
+    };
+  });
+}
+
 export function MatchesPageClient({
   initialMatches,
   initialError,
@@ -42,50 +72,45 @@ export function MatchesPageClient({
 }) {
   const router = useRouter();
   const [active, setActive] = useState<Match | null>(null);
-  const [matches, setMatches] = useState<Match[]>(initialMatches);
-  const [error, setError] = useState(initialError ?? "");
+  const today = getTodayIsoDate();
 
-  useEffect(() => {
-    let cancelled = false;
-    let refreshTimer: number | null = null;
+  const { data: matchesData, error: matchesError } = useSWR(
+    `football-data-world-cup-matches:${today}`,
+    () => fetchMatchesFromProxy({ dateFrom: today }),
+    {
+      fallbackData: { matches: initialMatches },
+      revalidateOnFocus: false,
+      refreshInterval: (resource) =>
+        resource?.matches.some((match) => match.status === "live")
+          ? LIVE_REFRESH_INTERVAL_MS
+          : DEFAULT_REFRESH_INTERVAL_MS,
+    },
+  );
 
-    const scheduleRefresh = (nextMatches: Match[]) => {
-      if (cancelled) {
-        return;
-      }
+  const {
+    data: predictionsData,
+    error: predictionsError,
+    mutate: mutatePredictions,
+  } = useSWR(MY_PREDICTIONS_CACHE_KEY, fetchMyPredictions, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    revalidateIfStale: false,
+  });
 
-      const refreshInterval = nextMatches.some((match) => match.status === "live")
-        ? LIVE_REFRESH_INTERVAL_MS
-        : DEFAULT_REFRESH_INTERVAL_MS;
-      refreshTimer = window.setTimeout(loadMatches, refreshInterval);
-    };
+  const matches = useMemo(
+    () =>
+      mergePredictionsWithMatches(
+        matchesData?.matches ?? initialMatches,
+        predictionsData?.predictions ?? [],
+      ),
+    [matchesData?.matches, initialMatches, predictionsData?.predictions],
+  );
 
-    const loadMatches = () => {
-      fetchMatches()
-        .then((response) => {
-          if (!cancelled) {
-            setMatches(response.matches);
-            setError("");
-            scheduleRefresh(response.matches);
-          }
-        })
-        .catch((err) => {
-          if (!cancelled) {
-            setError(getApiErrorMessage(err));
-            scheduleRefresh([]);
-          }
-        });
-    };
-
-    scheduleRefresh(initialMatches);
-
-    return () => {
-      cancelled = true;
-      if (refreshTimer !== null) {
-        window.clearTimeout(refreshTimer);
-      }
-    };
-  }, [initialMatches]);
+  const errorMessage =
+    (matchesError ? getDirectMatchesErrorMessage(matchesError) : "") ||
+    (predictionsError ? getApiErrorMessage(predictionsError) : "") ||
+    initialError ||
+    "";
 
   const grouped = useMemo(() => {
     const groupedMatches = new Map<string, Match[]>();
@@ -104,13 +129,42 @@ export function MatchesPageClient({
     away: number,
     winner: "home" | "away" | "draw" | null,
   ) => {
-    setMatches((current) =>
-      current.map((match) =>
-        match.id === matchId
-          ? { ...match, predicted: winner ? { home, away, winner } : { home, away } }
-          : match,
-      ),
-    );
+    void mutatePredictions((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const nextPrediction = {
+        matchId,
+        predicted: winner ? { home, away, winner } : { home, away },
+      };
+      const existingIndex = current.predictions.findIndex(
+        (prediction) => prediction.matchId === matchId,
+      );
+
+      if (existingIndex === -1) {
+        return {
+          ...current,
+          predictions: [nextPrediction, ...current.predictions],
+        };
+      }
+
+      return {
+        ...current,
+        predictions: current.predictions.map((prediction) =>
+          prediction.matchId === matchId ? { ...prediction, ...nextPrediction } : prediction,
+        ),
+      };
+    }, false);
+
+    const session = getSession();
+    const activeGroup = getActiveGroup();
+    if (session?.user.id && activeGroup?.id) {
+      clearMemberPredictionsCache(activeGroup.id, session.user.id);
+      void globalMutate(getGroupMemberPredictionsCacheKey(activeGroup.id, session.user.id));
+    }
+
+    void mutatePredictions();
     setActive(null);
   };
 
@@ -129,7 +183,7 @@ export function MatchesPageClient({
           <p className="mt-1 text-sm text-muted-foreground">
             Submit predictions before the deadline. Predictions lock 15 minutes before kickoff.
           </p>
-          {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+          {errorMessage && <p className="mt-3 text-sm text-destructive">{errorMessage}</p>}
         </header>
 
         <div className="space-y-8">
