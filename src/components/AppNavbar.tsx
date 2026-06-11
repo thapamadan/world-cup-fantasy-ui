@@ -2,17 +2,24 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Trophy } from "lucide-react";
 import { logout } from "@/lib/api";
+import type { Group, AuthSession } from "@/lib/types";
 import { clearActiveGroup, clearSession, getActiveGroup, getSession } from "@/lib/auth";
 import { BRAND_SUBTITLE, BRAND_TITLE } from "@/lib/branding";
 
 export function AppNavbar() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const session = getSession();
-  const activeGroup = getActiveGroup();
+  const [session, setSessionState] = useState<AuthSession | null>(null);
+  const [activeGroup, setActiveGroupState] = useState<Group | null>(null);
+
+  useEffect(() => {
+    setSessionState(getSession());
+    setActiveGroupState(getActiveGroup());
+  }, []);
+
   const sessionName = session?.user.name ?? "Guest User";
   const sessionEmail = session?.user.email ?? "guest@example.com";
   const sessionInitials = session?.user.initials ?? "GU";
@@ -24,6 +31,8 @@ export function AppNavbar() {
     } finally {
       clearSession();
       clearActiveGroup();
+      setSessionState(null);
+      setActiveGroupState(null);
       setMenuOpen(false);
       router.push("/");
     }
@@ -37,8 +46,12 @@ export function AppNavbar() {
             <Trophy className="h-4 w-4 text-primary" strokeWidth={2.5} />
           </span>
           <div className="leading-tight">
-            <div className="text-sm font-semibold tracking-tight text-foreground">{BRAND_TITLE}</div>
-            <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{BRAND_SUBTITLE}</div>
+            <div className="text-sm font-semibold tracking-tight text-foreground">
+              {BRAND_TITLE}
+            </div>
+            <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              {BRAND_SUBTITLE}
+            </div>
           </div>
         </Link>
 
@@ -66,13 +79,13 @@ export function AppNavbar() {
                   <div className="text-sm font-medium text-foreground">{groupName}</div>
                 </div>
                 <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      router.push("/change-password");
-                    }}
-                    className="mb-3 w-full rounded-xl border border-border bg-background px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-muted"
-                  >
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    router.push("/change-password");
+                  }}
+                  className="mb-3 w-full rounded-xl border border-border bg-background px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-muted"
+                >
                   Change password
                 </button>
                 <button

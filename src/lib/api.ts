@@ -1,5 +1,11 @@
 import { getSession } from "@/lib/auth";
-import type { AuthSession, Group, LeaderboardRow, Match, MemberPredictionsResponse } from "@/lib/types";
+import type {
+  AuthSession,
+  Group,
+  LeaderboardRow,
+  Match,
+  MemberPredictionsResponse,
+} from "@/lib/types";
 
 export class ApiError extends Error {
   status: number;
@@ -105,7 +111,12 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
-        throw new ApiError(response.status, payload ? normalizeApiDetail(payload.detail) : `${response.status} ${response.statusText}`);
+        throw new ApiError(
+          response.status,
+          payload
+            ? normalizeApiDetail(payload.detail)
+            : `${response.status} ${response.statusText}`,
+        );
       }
 
       return response.json() as Promise<T>;
@@ -125,7 +136,9 @@ export function getApiErrorMessage(error: unknown) {
     return "Cannot reach the backend API. Start the Python server and try again.";
   }
   if (error instanceof Error) {
-    return error.message === "Request failed" ? "Cannot reach the backend API. Start the Python server and try again." : error.message;
+    return error.message === "Request failed"
+      ? "Cannot reach the backend API. Start the Python server and try again."
+      : error.message;
   }
   return "Request failed";
 }
@@ -149,23 +162,39 @@ export async function logout() {
 export async function fetchMe(token?: string | null) {
   return apiFetch<{
     user: AuthSession["user"];
-    points: { totalPoints: number; exactScores: number; predictionCount: number; scoredPredictionCount: number };
+    points: {
+      totalPoints: number;
+      exactScores: number;
+      predictionCount: number;
+      scoredPredictionCount: number;
+    };
   }>("/api/me", { token });
 }
 
 export async function forgotPassword(input: { email: string; new_password: string }) {
-  return apiFetch<{ message: string }>("/api/auth/forgot-password", { method: "POST", body: input });
+  return apiFetch<{ message: string }>("/api/auth/forgot-password", {
+    method: "POST",
+    body: input,
+  });
 }
 
 export async function changePassword(input: { current_password: string; new_password: string }) {
-  return apiFetch<{ message: string }>("/api/auth/change-password", { method: "POST", body: input });
+  return apiFetch<{ message: string }>("/api/auth/change-password", {
+    method: "POST",
+    body: input,
+  });
 }
 
 export async function fetchMatches() {
   return apiFetch<{ matches: Match[] }>("/api/matches");
 }
 
-export async function savePrediction(input: { match_id: string; home_score: number; away_score: number; winner?: "home" | "away" | "draw" }) {
+export async function savePrediction(input: {
+  match_id: string;
+  home_score: number;
+  away_score: number;
+  winner?: "home" | "away" | "draw";
+}) {
   return apiFetch<{
     message: string;
     prediction: { match_id: string; home: number; away: number };
@@ -184,7 +213,7 @@ export async function createGroup(input: { name: string; join_code: string }) {
   return apiFetch<{ group: Group }>("/api/groups", { method: "POST", body: input });
 }
 
-export async function joinGroup(input: { group_name: string; join_code: string }) {
+export async function joinGroup(input: { group_name?: string; join_code: string }) {
   return apiFetch<{ group: Group }>("/api/groups/join", { method: "POST", body: input });
 }
 
@@ -193,9 +222,13 @@ export async function fetchMyGroups() {
 }
 
 export async function fetchGroupLeaderboard(groupId: number) {
-  return apiFetch<{ group: Group; leaderboard: LeaderboardRow[] }>(`/api/groups/${groupId}/leaderboard`);
+  return apiFetch<{ group: Group; leaderboard: LeaderboardRow[] }>(
+    `/api/groups/${groupId}/leaderboard`,
+  );
 }
 
 export async function fetchGroupMemberPredictions(groupId: number, memberId: number) {
-  return apiFetch<MemberPredictionsResponse>(`/api/groups/${groupId}/members/${memberId}/predictions`);
+  return apiFetch<MemberPredictionsResponse>(
+    `/api/groups/${groupId}/members/${memberId}/predictions`,
+  );
 }
