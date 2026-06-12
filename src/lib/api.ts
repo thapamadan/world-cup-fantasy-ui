@@ -43,7 +43,8 @@ function resolveApiBases() {
   }
 
   if (typeof window !== "undefined") {
-    const { protocol, hostname } = window.location;
+    const { origin, protocol, hostname } = window.location;
+    bases.add(origin);
     // Prefer the current host's backend directly as fallback.
     bases.add(`${protocol}//${hostname}:8000`);
   }
@@ -61,7 +62,7 @@ export function getPreferredApiBase() {
     return process.env.NEXT_PUBLIC_API_BASE_URL;
   }
   if (typeof window !== "undefined") {
-    return `${window.location.protocol}//${window.location.hostname}:8000`;
+    return window.location.origin;
   }
   return API_BASES[0] ?? "http://127.0.0.1:8000";
 }

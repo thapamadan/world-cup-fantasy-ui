@@ -173,6 +173,7 @@ export default function MemberPredictionsPage() {
           <div className="space-y-3">
             {predictions.map((match) => {
               const matchTime = formatMatchDateTimeNepal(match.kickoffAt);
+              const showPredictionDetails = Boolean(match.predicted);
 
               return (
                 <div
@@ -214,9 +215,9 @@ export default function MemberPredictionsPage() {
                       </div>
                       <div className="mt-3 grid gap-3 sm:grid-cols-3">
                         <InfoTile
-                          label={isCurrentUser ? "Predicted score" : "Prediction"}
+                          label="Predicted score"
                           value={
-                            isCurrentUser && match.predicted
+                            showPredictionDetails && match.predicted
                               ? `${match.predicted.home}-${match.predicted.away}`
                               : match.submitted
                                 ? "Submitted"
@@ -224,11 +225,11 @@ export default function MemberPredictionsPage() {
                           }
                         />
                         <InfoTile
-                          label={isCurrentUser ? "Predicted winner" : "Visibility"}
+                          label="Predicted winner"
                           value={
-                            isCurrentUser && match.predicted
+                            showPredictionDetails && match.predicted
                               ? getWinnerLabel(match.home, match.away, match.predicted.winner)
-                              : "Hidden until review"
+                              : "Pending"
                           }
                         />
                         <InfoTile

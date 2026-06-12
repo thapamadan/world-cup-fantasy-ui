@@ -36,11 +36,11 @@ type FootballDataQuery = {
 };
 
 function getApiKey() {
-  return process.env.FOOTBALL_DATA_API_KEY?.trim() || process.env.NEXT_PUBLIC_FOOTBALL_DATA_API_KEY?.trim() || "";
+  return process.env.FOOTBALL_DATA_API_KEY?.trim() || "";
 }
 
 function getApiHeaderName() {
-  return process.env.FOOTBALL_DATA_API_HEADER?.trim() || process.env.NEXT_PUBLIC_FOOTBALL_DATA_API_HEADER?.trim() || "X-Auth-Token";
+  return process.env.FOOTBALL_DATA_API_HEADER?.trim() || "X-Auth-Token";
 }
 
 function resolveTeamName(

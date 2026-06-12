@@ -43,48 +43,20 @@ import {
   setSession,
 } from "@/lib/auth";
 import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
-import { MY_PREDICTIONS_CACHE_KEY } from "@/lib/predictions-cache";
+import {
+  getDashboardLeaderboardCacheKey,
+  MY_PREDICTIONS_CACHE_KEY,
+  readDashboardLeaderboardCache,
+  writeDashboardLeaderboardCache,
+} from "@/lib/predictions-cache";
 import type { Group, LeaderboardRow, Match, MemberPrediction } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
 const DEFAULT_REFRESH_INTERVAL_MS = 8_000;
 const MATCH_PREVIEW_REFRESH_INTERVAL_MS = 60_000;
 const LIVE_MATCH_PREVIEW_REFRESH_INTERVAL_MS = 15_000;
-const LEADERBOARD_CACHE_STORAGE_KEY = "wow_dashboard_leaderboard_cache";
-
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
-}
-
-type LeaderboardCache = {
-  group: Group;
-  leaderboard: LeaderboardRow[];
-};
-
-function readLeaderboardCache() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const rawValue = window.localStorage.getItem(LEADERBOARD_CACHE_STORAGE_KEY);
-  if (!rawValue) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(rawValue) as LeaderboardCache;
-  } catch {
-    window.localStorage.removeItem(LEADERBOARD_CACHE_STORAGE_KEY);
-    return null;
-  }
-}
-
-function writeLeaderboardCache(value: LeaderboardCache) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(LEADERBOARD_CACHE_STORAGE_KEY, JSON.stringify(value));
 }
 
 function buildLeaderboardRefreshSignature(matches: Match[]) {
@@ -118,18 +90,41 @@ function mergePredictionsWithMatches(matches: Match[], predictions: MemberPredic
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [group, setGroup] = useState<Group | null>(null);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
+  const [group, setGroup] = useState<Group | null>(getActiveGroup());
+  const [resolvedGroupId, setResolvedGroupId] = useState<number | null>(getActiveGroup()?.id ?? null);
+  const [groupResolved, setGroupResolved] = useState(getActiveGroup() !== null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [currentName, setCurrentName] = useState("Player");
-  const [loading, setLoading] = useState(true);
   const [matchesLoading, setMatchesLoading] = useState(true);
   const [error, setError] = useState("");
+  const cachedLeaderboard = resolvedGroupId ? readDashboardLeaderboardCache(resolvedGroupId) : null;
   const { data: predictionsData } = useSWR(MY_PREDICTIONS_CACHE_KEY, fetchMyPredictions, {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
     revalidateIfStale: false,
   });
+  const {
+    data: leaderboardData,
+    error: leaderboardError,
+    isLoading: leaderboardLoading,
+    mutate: mutateLeaderboard,
+  } = useSWR(
+    resolvedGroupId ? getDashboardLeaderboardCacheKey(resolvedGroupId) : null,
+    () => fetchGroupLeaderboard(resolvedGroupId!),
+    {
+      fallbackData: cachedLeaderboard ?? undefined,
+      revalidateOnFocus: false,
+      refreshInterval: DEFAULT_REFRESH_INTERVAL_MS,
+      onSuccess: (response) => {
+        setActiveGroup(response.group);
+        setGroup(response.group);
+        writeDashboardLeaderboardCache(response.group.id, response);
+        setError("");
+      },
+    },
+  );
+  const leaderboard = leaderboardData?.leaderboard ?? cachedLeaderboard?.leaderboard ?? [];
+  const loading = !groupResolved || (resolvedGroupId !== null && !leaderboardData && leaderboardLoading);
 
   const previewMatches = useMemo(
     () => mergePredictionsWithMatches(matches, predictionsData?.predictions ?? []),
@@ -138,45 +133,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setCurrentName(getSession()?.user.name ?? "Player");
-
-    const cachedLeaderboard = readLeaderboardCache();
-    if (!cachedLeaderboard) {
-      return;
-    }
-
-    setGroup(cachedLeaderboard.group);
-    setLeaderboard(cachedLeaderboard.leaderboard);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    let leaderboardRefreshTimer: number | null = null;
     let matchesRefreshTimer: number | null = null;
     let lastLeaderboardRefreshSignature = "";
-
-    const scheduleLeaderboardRefresh = () => {
-      if (cancelled) {
-        return;
-      }
-
-      if (leaderboardRefreshTimer !== null) {
-        window.clearTimeout(leaderboardRefreshTimer);
-      }
-
-      leaderboardRefreshTimer = window.setTimeout(() => {
-        loadLeaderboard().catch((err) => {
-          if (!cancelled) {
-            setError(getApiErrorMessage(err));
-            if (err instanceof ApiError && err.status === 401) {
-              clearSession();
-              clearActiveGroup();
-              router.push("/");
-            }
-          }
-        });
-      }, DEFAULT_REFRESH_INTERVAL_MS);
-    };
 
     const scheduleMatchesRefresh = (matchesToCheck: Match[]) => {
       if (cancelled) {
@@ -199,49 +161,6 @@ export default function DashboardPage() {
       }, refreshInterval);
     };
 
-    const resolveGroup = async () => {
-      if (!getSession()) {
-        const me = await fetchMe();
-        if (cancelled) return;
-        setSession({ token: "cookie-session", user: me.user });
-      }
-
-      const currentGroup = getActiveGroup();
-
-      let resolvedGroup = currentGroup;
-      if (!resolvedGroup) {
-        const groupsResponse = await fetchMyGroups();
-        resolvedGroup = groupsResponse.groups[0] ?? null;
-        if (resolvedGroup) {
-          setActiveGroup(resolvedGroup);
-        }
-      }
-
-      if (!resolvedGroup) {
-        router.push("/groups");
-        return null;
-      }
-
-      return resolvedGroup;
-    };
-
-    const loadLeaderboard = async () => {
-      const resolvedGroup = await resolveGroup();
-      if (!resolvedGroup) {
-        return;
-      }
-
-      const response = await fetchGroupLeaderboard(resolvedGroup.id);
-      if (cancelled) return;
-
-      setActiveGroup(response.group);
-      setGroup(response.group);
-      setLeaderboard(response.leaderboard);
-      writeLeaderboardCache({ group: response.group, leaderboard: response.leaderboard });
-      setError("");
-      scheduleLeaderboardRefresh();
-    };
-
     const loadMatchesPreview = async () => {
       const matchesResponse = await fetchMatchesFromProxy({ dateFrom: getTodayIsoDate() });
       if (cancelled) return;
@@ -257,26 +176,9 @@ export default function DashboardPage() {
       scheduleMatchesRefresh(matchesResponse.matches);
 
       if (shouldRefreshLeaderboard) {
-        await loadLeaderboard();
+        await mutateLeaderboard();
       }
     };
-
-    loadLeaderboard()
-      .catch((err) => {
-        if (!cancelled) {
-          setError(getApiErrorMessage(err));
-          if (err instanceof ApiError && err.status === 401) {
-            clearSession();
-            clearActiveGroup();
-            router.push("/");
-          }
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
 
     loadMatchesPreview().catch((err) => {
       if (!cancelled) {
@@ -287,14 +189,80 @@ export default function DashboardPage() {
 
     return () => {
       cancelled = true;
-      if (leaderboardRefreshTimer !== null) {
-        window.clearTimeout(leaderboardRefreshTimer);
-      }
       if (matchesRefreshTimer !== null) {
         window.clearTimeout(matchesRefreshTimer);
       }
     };
+  }, [mutateLeaderboard]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveGroup = async () => {
+      try {
+        if (!getSession()) {
+          const me = await fetchMe();
+          if (cancelled) return;
+          setSession({ token: "cookie-session", user: me.user });
+          setCurrentName(me.user.name);
+        }
+
+        let resolvedGroup = getActiveGroup();
+        if (!resolvedGroup) {
+          const groupsResponse = await fetchMyGroups();
+          resolvedGroup = groupsResponse.groups[0] ?? null;
+          if (resolvedGroup) {
+            setActiveGroup(resolvedGroup);
+          }
+        }
+
+        if (!resolvedGroup) {
+          setGroupResolved(true);
+          router.push("/groups");
+          return;
+        }
+
+        if (!cancelled) {
+          setGroup(resolvedGroup);
+          setResolvedGroupId(resolvedGroup.id);
+          setGroupResolved(true);
+          setError("");
+        }
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
+        setError(getApiErrorMessage(err));
+        if (err instanceof ApiError && err.status === 401) {
+          clearSession();
+          clearActiveGroup();
+          router.push("/");
+        }
+
+        setGroupResolved(true);
+      }
+    };
+
+    void resolveGroup();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
+
+  useEffect(() => {
+    if (!leaderboardError) {
+      return;
+    }
+
+    setError(getApiErrorMessage(leaderboardError));
+    if (leaderboardError instanceof ApiError && leaderboardError.status === 401) {
+      clearSession();
+      clearActiveGroup();
+      router.push("/");
+    }
+  }, [leaderboardError, router]);
 
   return (
     <div className="min-h-screen bg-background">

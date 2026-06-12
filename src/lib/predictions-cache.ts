@@ -1,4 +1,5 @@
 import type { AuthUser, Match } from "@/lib/types";
+import type { Group, LeaderboardRow } from "@/lib/types";
 
 export const MY_PREDICTIONS_CACHE_KEY = "my-predictions";
 export const WINNER_PREDICTION_CACHE_KEY = "winner-prediction";
@@ -7,6 +8,45 @@ export type MemberPredictionsCache = {
   member: AuthUser;
   predictions: Match[];
 };
+
+export type DashboardLeaderboardCache = {
+  group: Group;
+  leaderboard: LeaderboardRow[];
+};
+
+function getDashboardLeaderboardStorageKey(groupId: number) {
+  return `wow_dashboard_leaderboard_${groupId}`;
+}
+
+export function getDashboardLeaderboardCacheKey(groupId: number) {
+  return `dashboard-leaderboard:${groupId}`;
+}
+
+export function readDashboardLeaderboardCache(groupId: number) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const rawValue = window.sessionStorage.getItem(getDashboardLeaderboardStorageKey(groupId));
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawValue) as DashboardLeaderboardCache;
+  } catch {
+    window.sessionStorage.removeItem(getDashboardLeaderboardStorageKey(groupId));
+    return null;
+  }
+}
+
+export function writeDashboardLeaderboardCache(groupId: number, value: DashboardLeaderboardCache) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.sessionStorage.setItem(getDashboardLeaderboardStorageKey(groupId), JSON.stringify(value));
+}
 
 function getMemberPredictionsStorageKey(groupId: number, memberId: number) {
   return `wow_member_predictions_${groupId}_${memberId}`;
