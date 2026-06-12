@@ -90,9 +90,10 @@ function mergePredictionsWithMatches(matches: Match[], predictions: MemberPredic
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [group, setGroup] = useState<Group | null>(getActiveGroup());
-  const [resolvedGroupId, setResolvedGroupId] = useState<number | null>(getActiveGroup()?.id ?? null);
-  const [groupResolved, setGroupResolved] = useState(getActiveGroup() !== null);
+  const [group, setGroup] = useState<Group | null>(null);
+  const [resolvedGroupId, setResolvedGroupId] = useState<number | null>(null);
+  const [groupResolved, setGroupResolved] = useState(false);
+  const [groupResolutionAttempt, setGroupResolutionAttempt] = useState(0);
   const [matches, setMatches] = useState<Match[]>([]);
   const [currentName, setCurrentName] = useState("Player");
   const [matchesLoading, setMatchesLoading] = useState(true);
@@ -207,13 +208,17 @@ export default function DashboardPage() {
           setCurrentName(me.user.name);
         }
 
-        let resolvedGroup = getActiveGroup();
-        if (!resolvedGroup) {
-          const groupsResponse = await fetchMyGroups();
-          resolvedGroup = groupsResponse.groups[0] ?? null;
-          if (resolvedGroup) {
-            setActiveGroup(resolvedGroup);
-          }
+        const groupsResponse = await fetchMyGroups();
+        const availableGroups = groupsResponse.groups;
+        const currentGroup = getActiveGroup();
+        const resolvedGroup = currentGroup
+          ? availableGroups.find((candidate) => candidate.id === currentGroup.id) ?? availableGroups[0] ?? null
+          : availableGroups[0] ?? null;
+
+        if (resolvedGroup) {
+          setActiveGroup(resolvedGroup);
+        } else {
+          clearActiveGroup();
         }
 
         if (!resolvedGroup) {
@@ -249,10 +254,20 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [groupResolutionAttempt, router]);
 
   useEffect(() => {
     if (!leaderboardError) {
+      return;
+    }
+
+    if (leaderboardError instanceof ApiError && leaderboardError.status === 404) {
+      clearActiveGroup();
+      setGroup(null);
+      setResolvedGroupId(null);
+      setGroupResolved(false);
+      setError("");
+      setGroupResolutionAttempt((value) => value + 1);
       return;
     }
 

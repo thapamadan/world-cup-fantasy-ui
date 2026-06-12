@@ -114,6 +114,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     try {
       const response = await fetch(`${base}${path}`, {
         method: options.method ?? "GET",
+        cache: options.method && options.method !== "GET" ? "no-store" : "no-store",
         credentials: "include",
         headers: {
           "Content-Type": "application/json",

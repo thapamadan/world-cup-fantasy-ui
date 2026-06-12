@@ -15,11 +15,11 @@ export type DashboardLeaderboardCache = {
 };
 
 function getDashboardLeaderboardStorageKey(groupId: number) {
-  return `wow_dashboard_leaderboard_${groupId}`;
+  return `wow_dashboard_leaderboard_v2_${groupId}`;
 }
 
 export function getDashboardLeaderboardCacheKey(groupId: number) {
-  return `dashboard-leaderboard:${groupId}`;
+  return `dashboard-leaderboard:v2:${groupId}`;
 }
 
 export function readDashboardLeaderboardCache(groupId: number) {
