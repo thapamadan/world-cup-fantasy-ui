@@ -1,26 +1,19 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import useSWR, { mutate as globalMutate } from "swr";
+import useSWR from "swr";
 import { useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, Clock } from "lucide-react";
 
 import { AppNavbar } from "@/components/AppNavbar";
 import { PredictionModal } from "@/components/PredictionModal";
 import { TeamFlag } from "@/components/TeamFlag";
-import { getActiveGroup, getSession } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { fetchMyPredictions, getApiErrorMessage } from "@/lib/api";
 import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
-import {
-  clearMemberPredictionsCache,
-  getGroupMemberPredictionsCacheKey,
-  MY_PREDICTIONS_CACHE_KEY,
-} from "@/lib/predictions-cache";
+import { MY_PREDICTIONS_CACHE_KEY } from "@/lib/predictions-cache";
 import type { Match, MemberPrediction } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
-
-const DEFAULT_REFRESH_INTERVAL_MS = 8_000;
-const LIVE_REFRESH_INTERVAL_MS = 5_000;
 
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
@@ -80,10 +73,6 @@ export function MatchesPageClient({
     {
       fallbackData: { matches: initialMatches },
       revalidateOnFocus: false,
-      refreshInterval: (resource) =>
-        resource?.matches.some((match) => match.status === "live")
-          ? LIVE_REFRESH_INTERVAL_MS
-          : DEFAULT_REFRESH_INTERVAL_MS,
     },
   );
 
@@ -156,13 +145,6 @@ export function MatchesPageClient({
         ),
       };
     }, false);
-
-    const session = getSession();
-    const activeGroup = getActiveGroup();
-    if (session?.user.id && activeGroup?.id) {
-      clearMemberPredictionsCache(activeGroup.id, session.user.id);
-      void globalMutate(getGroupMemberPredictionsCacheKey(activeGroup.id, session.user.id));
-    }
 
     void mutatePredictions();
     setActive(null);

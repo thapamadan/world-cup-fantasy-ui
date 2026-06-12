@@ -13,6 +13,9 @@ export type Match = {
   submitted?: boolean;
   result?: { home: number; away: number };
   pointsEarned?: number;
+  matchday?: number | null;
+  stage?: string;
+  group?: string | null;
 };
 
 export type MemberPrediction = {
@@ -54,11 +57,38 @@ export type LeaderboardRow = {
 
 export type MemberPredictionsResponse = {
   member: AuthUser;
-  predictions: MemberPrediction[];
+  predictions: Match[];
 };
 
 export type UserPredictionsResponse = {
   predictions: MemberPrediction[];
+};
+
+export type GroupHistoryPrediction = {
+  userId: number;
+  name: string;
+  initials: string;
+  predicted: { home: number; away: number; winner?: "home" | "away" | "draw" };
+  pointsEarned?: number;
+  isMe?: boolean;
+};
+
+export type GroupHistoryItem = {
+  match: Match;
+  predictions: GroupHistoryPrediction[];
+};
+
+export type GroupHistoryMember = {
+  userId: number;
+  name: string;
+  initials: string;
+  isMe?: boolean;
+};
+
+export type GroupHistoryResponse = {
+  group: Group;
+  members: GroupHistoryMember[];
+  items: GroupHistoryItem[];
 };
 
 export type TeamOption = {

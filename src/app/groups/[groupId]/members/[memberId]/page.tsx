@@ -11,7 +11,6 @@ import { TeamFlag } from "@/components/TeamFlag";
 import {
   ApiError,
   fetchGroupMemberPredictions,
-  fetchMatches,
   fetchMe,
   getApiErrorMessage,
 } from "@/lib/api";
@@ -21,7 +20,7 @@ import {
   readMemberPredictionsCache,
   writeMemberPredictionsCache,
 } from "@/lib/predictions-cache";
-import type { AuthUser, Match, MemberPrediction } from "@/lib/types";
+import type { AuthUser, Match } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
 function sortPredictions(matches: Match[]) {
@@ -40,24 +39,6 @@ function sortPredictions(matches: Match[]) {
     }
     return leftKickoffAt - rightKickoffAt;
   });
-}
-
-function mergePredictionsWithMatches(matches: Match[], predictions: MemberPrediction[]) {
-  const predictionMap = new Map(predictions.map((prediction) => [prediction.matchId, prediction]));
-
-  return sortPredictions(
-    matches
-      .filter((match) => predictionMap.has(match.id))
-      .map((match) => {
-        const prediction = predictionMap.get(match.id)!;
-        return {
-          ...match,
-          predicted: prediction.predicted,
-          pointsEarned: prediction.pointsEarned,
-          submitted: true,
-        };
-      }),
-  );
 }
 
 function getWinnerLabel(home: string, away: string, winner?: "home" | "away" | "draw") {
@@ -89,18 +70,10 @@ export default function MemberPredictionsPage() {
   const { data, error, isLoading } = useSWR(
     getGroupMemberPredictionsCacheKey(groupId, memberId),
     async () => {
-      const [response, matchesResponse] = await Promise.all([
-        fetchGroupMemberPredictions(groupId, memberId),
-        fetchMatches(),
-      ]);
-
-      const mergedPredictions = mergePredictionsWithMatches(
-        matchesResponse.matches,
-        response.predictions,
-      );
+      const response = await fetchGroupMemberPredictions(groupId, memberId);
       const nextData = {
         member: response.member,
-        predictions: mergedPredictions,
+        predictions: sortPredictions(response.predictions),
       };
 
       writeMemberPredictionsCache(groupId, memberId, nextData);

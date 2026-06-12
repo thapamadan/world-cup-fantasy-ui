@@ -51,23 +51,8 @@ import {
 } from "@/lib/predictions-cache";
 import type { Group, LeaderboardRow, Match, MemberPrediction } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
-
-const DEFAULT_REFRESH_INTERVAL_MS = 8_000;
-const MATCH_PREVIEW_REFRESH_INTERVAL_MS = 60_000;
-const LIVE_MATCH_PREVIEW_REFRESH_INTERVAL_MS = 15_000;
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function buildLeaderboardRefreshSignature(matches: Match[]) {
-  return matches
-    .filter((match) => match.status !== "upcoming")
-    .map(
-      (match) =>
-        `${match.id}:${match.status}:${match.result ? `${match.result.home}-${match.result.away}` : "pending"}`,
-    )
-    .sort()
-    .join("|");
 }
 
 function mergePredictionsWithMatches(matches: Match[], predictions: MemberPrediction[]) {
@@ -115,7 +100,6 @@ export default function DashboardPage() {
     {
       fallbackData: cachedLeaderboard ?? undefined,
       revalidateOnFocus: false,
-      refreshInterval: DEFAULT_REFRESH_INTERVAL_MS,
       onSuccess: (response) => {
         setActiveGroup(response.group);
         setGroup(response.group);
@@ -138,47 +122,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    let matchesRefreshTimer: number | null = null;
-    let lastLeaderboardRefreshSignature = "";
-
-    const scheduleMatchesRefresh = (matchesToCheck: Match[]) => {
-      if (cancelled) {
-        return;
-      }
-
-      if (matchesRefreshTimer !== null) {
-        window.clearTimeout(matchesRefreshTimer);
-      }
-
-      const refreshInterval = matchesToCheck.some((match) => match.status === "live")
-        ? LIVE_MATCH_PREVIEW_REFRESH_INTERVAL_MS
-        : MATCH_PREVIEW_REFRESH_INTERVAL_MS;
-      matchesRefreshTimer = window.setTimeout(() => {
-        loadMatchesPreview().catch((err) => {
-          if (!cancelled) {
-            setError(getDirectMatchesErrorMessage(err));
-          }
-        });
-      }, refreshInterval);
-    };
 
     const loadMatchesPreview = async () => {
       const matchesResponse = await fetchMatchesFromProxy({ dateFrom: getTodayIsoDate() });
       if (cancelled) return;
-
-      const nextSignature = buildLeaderboardRefreshSignature(matchesResponse.matches);
-      const shouldRefreshLeaderboard =
-        lastLeaderboardRefreshSignature.length > 0 &&
-        nextSignature !== lastLeaderboardRefreshSignature;
-
-      lastLeaderboardRefreshSignature = nextSignature;
       setMatches(matchesResponse.matches);
       setMatchesLoading(false);
-      scheduleMatchesRefresh(matchesResponse.matches);
-
-      if (shouldRefreshLeaderboard) {
-        await mutateLeaderboard();
-      }
     };
 
     loadMatchesPreview().catch((err) => {
@@ -190,11 +139,8 @@ export default function DashboardPage() {
 
     return () => {
       cancelled = true;
-      if (matchesRefreshTimer !== null) {
-        window.clearTimeout(matchesRefreshTimer);
-      }
     };
-  }, [mutateLeaderboard]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -208,12 +154,14 @@ export default function DashboardPage() {
           setCurrentName(me.user.name);
         }
 
-        const groupsResponse = await fetchMyGroups();
-        const availableGroups = groupsResponse.groups;
         const currentGroup = getActiveGroup();
-        const resolvedGroup = currentGroup
-          ? availableGroups.find((candidate) => candidate.id === currentGroup.id) ?? availableGroups[0] ?? null
-          : availableGroups[0] ?? null;
+        let resolvedGroup = currentGroup;
+
+        if (!resolvedGroup) {
+          const groupsResponse = await fetchMyGroups();
+          const availableGroups = groupsResponse.groups;
+          resolvedGroup = availableGroups[0] ?? null;
+        }
 
         if (resolvedGroup) {
           setActiveGroup(resolvedGroup);
@@ -383,10 +331,10 @@ function HeroCard({
               Predict next match <ArrowRight className="h-4 w-4" />
             </Link>
             <Link
-              href="/recent-games"
+              href="/game-history"
               className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-primary-foreground backdrop-blur transition hover:bg-white/10"
             >
-              Recent games <ArrowRight className="h-4 w-4" />
+              Game history <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         </div>

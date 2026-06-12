@@ -2,54 +2,62 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, History } from "lucide-react";
+import useSWR from "swr";
 
 import { AppNavbar } from "@/components/AppNavbar";
 import { PredictionModal } from "@/components/PredictionModal";
 import { TeamFlag } from "@/components/TeamFlag";
+import { fetchMyPredictions, getApiErrorMessage } from "@/lib/api";
 import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
-import type { Match } from "@/lib/types";
+import { MY_PREDICTIONS_CACHE_KEY } from "@/lib/predictions-cache";
+import type { Match, MemberPrediction } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
-
-const DEFAULT_REFRESH_INTERVAL_MS = 8_000;
-const LIVE_REFRESH_INTERVAL_MS = 5_000;
 
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function mergePredictionsWithMatches(matches: Match[], predictions: MemberPrediction[]) {
+  const predictionMap = new Map(predictions.map((prediction) => [prediction.matchId, prediction]));
+
+  return matches.map((match) => {
+    const prediction = predictionMap.get(match.id);
+    if (!prediction) {
+      return match;
+    }
+
+    return {
+      ...match,
+      predicted: prediction.predicted,
+      pointsEarned: prediction.pointsEarned,
+      submitted: true,
+    };
+  });
 }
 
 export default function RecentGamesPage() {
   const [active, setActive] = useState<Match | null>(null);
   const [matches, setMatches] = useState<Match[]>([]);
   const [error, setError] = useState("");
+  const { data: predictionsData, error: predictionsError } = useSWR(
+    MY_PREDICTIONS_CACHE_KEY,
+    fetchMyPredictions,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      revalidateIfStale: false,
+    },
+  );
 
   useEffect(() => {
     let cancelled = false;
-    let refreshTimer: number | null = null;
-
-    const scheduleRefresh = (matches: Match[]) => {
-      if (cancelled) {
-        return;
-      }
-
-      const refreshInterval = matches.some((match) => match.status === "live")
-        ? LIVE_REFRESH_INTERVAL_MS
-        : DEFAULT_REFRESH_INTERVAL_MS;
-      refreshTimer = window.setTimeout(() => {
-        loadMatches().catch((err) => {
-          if (!cancelled) {
-            setError(getDirectMatchesErrorMessage(err));
-          }
-        });
-      }, refreshInterval);
-    };
 
     const loadMatches = async () => {
       const response = await fetchMatchesFromProxy({ dateTo: getTodayIsoDate() });
       if (!cancelled) {
         setMatches(response.matches);
         setError("");
-        scheduleRefresh(response.matches);
       }
     };
 
@@ -61,18 +69,20 @@ export default function RecentGamesPage() {
 
     return () => {
       cancelled = true;
-      if (refreshTimer !== null) {
-        window.clearTimeout(refreshTimer);
-      }
     };
   }, []);
 
+  const mergedMatches = useMemo(
+    () => mergePredictionsWithMatches(matches, predictionsData?.predictions ?? []),
+    [matches, predictionsData?.predictions],
+  );
+
   const finishedMatches = useMemo(
     () =>
-      [...matches]
+      [...mergedMatches]
         .filter((match) => match.status === "finished")
         .sort((a, b) => Date.parse(b.kickoffAt) - Date.parse(a.kickoffAt)),
-    [matches],
+    [mergedMatches],
   );
 
   const handlePredictionSaved = (
@@ -106,7 +116,17 @@ export default function RecentGamesPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Finished matches sorted by latest first.
           </p>
-          {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
+          <Link
+            href="/game-history"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium transition hover:bg-muted"
+          >
+            <History className="h-4 w-4" /> Game history
+          </Link>
+          {(error || predictionsError) && (
+            <p className="mt-3 text-sm text-destructive">
+              {error || getApiErrorMessage(predictionsError)}
+            </p>
+          )}
         </header>
 
         {finishedMatches.length === 0 ? (

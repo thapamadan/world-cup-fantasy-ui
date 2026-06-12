@@ -2,6 +2,7 @@ import { getSession } from "@/lib/auth";
 import type {
   AuthSession,
   Group,
+  GroupHistoryResponse,
   LeaderboardRow,
   Match,
   MemberPredictionsResponse,
@@ -124,6 +125,11 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
       });
 
       if (!response.ok) {
+        if (response.status === 404) {
+          lastError = new ApiError(response.status, `${response.status} ${response.statusText}`);
+          continue;
+        }
+
         const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
         throw new ApiError(
           response.status,
@@ -267,4 +273,8 @@ export async function fetchGroupMemberPredictions(groupId: number, memberId: num
   return apiFetch<MemberPredictionsResponse>(
     `/api/groups/${groupId}/members/${memberId}/predictions`,
   );
+}
+
+export async function fetchGroupHistory(groupId: number) {
+  return apiFetch<GroupHistoryResponse>(`/api/groups/${groupId}/history`);
 }
