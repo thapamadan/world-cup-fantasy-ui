@@ -7,6 +7,7 @@ import { KeyRound, Plus, Trophy, Users } from "lucide-react";
 import { AppNavbar } from "@/components/AppNavbar";
 import { createGroup, fetchMe, getApiErrorMessage, joinGroup } from "@/lib/api";
 import { clearActiveGroup, clearSession, getSession, setActiveGroup, setSession } from "@/lib/auth";
+import { prefetchGroupHistory } from "@/lib/group-history-prefetch";
 
 export default function GroupsPage() {
   const router = useRouter();
@@ -48,6 +49,7 @@ export default function GroupsPage() {
     memberCount: number;
   }) => {
     setActiveGroup(group);
+    void prefetchGroupHistory(group.id);
     router.push("/dashboard");
   };
 

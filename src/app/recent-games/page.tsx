@@ -9,7 +9,9 @@ import { AppNavbar } from "@/components/AppNavbar";
 import { PredictionModal } from "@/components/PredictionModal";
 import { TeamFlag } from "@/components/TeamFlag";
 import { fetchMyPredictions, getApiErrorMessage } from "@/lib/api";
+import { getActiveGroup } from "@/lib/auth";
 import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
+import { prefetchGroupHistory } from "@/lib/group-history-prefetch";
 import { MY_PREDICTIONS_CACHE_KEY } from "@/lib/predictions-cache";
 import type { Match, MemberPrediction } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
@@ -118,6 +120,18 @@ export default function RecentGamesPage() {
           </p>
           <Link
             href="/game-history"
+            onMouseEnter={() => {
+              const activeGroup = getActiveGroup();
+              if (activeGroup) {
+                void prefetchGroupHistory(activeGroup.id);
+              }
+            }}
+            onTouchStart={() => {
+              const activeGroup = getActiveGroup();
+              if (activeGroup) {
+                void prefetchGroupHistory(activeGroup.id);
+              }
+            }}
             className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium transition hover:bg-muted"
           >
             <History className="h-4 w-4" /> Game history

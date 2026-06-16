@@ -43,6 +43,7 @@ import {
   setSession,
 } from "@/lib/auth";
 import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
+import { prefetchGroupHistory } from "@/lib/group-history-prefetch";
 import {
   getDashboardLeaderboardCacheKey,
   MY_PREDICTIONS_CACHE_KEY,
@@ -165,6 +166,7 @@ export default function DashboardPage() {
 
         if (resolvedGroup) {
           setActiveGroup(resolvedGroup);
+          void prefetchGroupHistory(resolvedGroup.id);
         } else {
           clearActiveGroup();
         }
@@ -332,6 +334,16 @@ function HeroCard({
             </Link>
             <Link
               href="/game-history"
+              onMouseEnter={() => {
+                if (group) {
+                  void prefetchGroupHistory(group.id);
+                }
+              }}
+              onTouchStart={() => {
+                if (group) {
+                  void prefetchGroupHistory(group.id);
+                }
+              }}
               className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-primary-foreground backdrop-blur transition hover:bg-white/10"
             >
               Game history <ArrowRight className="h-4 w-4" />

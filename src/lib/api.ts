@@ -38,16 +38,22 @@ function getAuthHeaderToken(token: string | null | undefined) {
 
 function resolveApiBases() {
   const bases = new Set<string>();
-
-  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-    bases.add(process.env.NEXT_PUBLIC_API_BASE_URL);
-  }
+  let sameHostApiBase = "";
 
   if (typeof window !== "undefined") {
     const { origin, protocol, hostname } = window.location;
+    sameHostApiBase = `${protocol}//${hostname}:8000`;
+    // Prefer the current host's backend directly before the frontend origin.
+    bases.add(sameHostApiBase);
     bases.add(origin);
-    // Prefer the current host's backend directly as fallback.
-    bases.add(`${protocol}//${hostname}:8000`);
+  }
+
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    const configuredBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+    if (configuredBase !== sameHostApiBase) {
+      bases.add(configuredBase);
+    }
   }
 
   bases.add("http://127.0.0.1:8000");

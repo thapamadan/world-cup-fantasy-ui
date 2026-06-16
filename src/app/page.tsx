@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { BRAND_SUBTITLE, BRAND_TITLE } from "@/lib/branding";
 import { clearActiveGroup, clearSession, setActiveGroup, setSession } from "@/lib/auth";
+import { prefetchGroupHistory } from "@/lib/group-history-prefetch";
 
 export default function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
@@ -44,6 +45,7 @@ export default function AuthPage() {
     const groupsResponse = await fetchMyGroups();
     if (groupsResponse.groups.length > 0) {
       setActiveGroup(groupsResponse.groups[0]);
+      void prefetchGroupHistory(groupsResponse.groups[0].id);
       router.push("/dashboard");
       return;
     }
@@ -82,6 +84,7 @@ export default function AuthPage() {
             if (cancelled) return;
             if (groupsResponse.groups.length > 0) {
               setActiveGroup(groupsResponse.groups[0]);
+              void prefetchGroupHistory(groupsResponse.groups[0].id);
               router.push("/dashboard");
               return;
             }
