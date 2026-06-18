@@ -52,6 +52,7 @@ import {
 } from "@/lib/predictions-cache";
 import type { Group, LeaderboardRow, Match, MemberPrediction } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
+
 function getTodayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -94,7 +95,6 @@ export default function DashboardPage() {
     data: leaderboardData,
     error: leaderboardError,
     isLoading: leaderboardLoading,
-    mutate: mutateLeaderboard,
   } = useSWR(
     resolvedGroupId ? getDashboardLeaderboardCacheKey(resolvedGroupId) : null,
     () => fetchGroupLeaderboard(resolvedGroupId!),

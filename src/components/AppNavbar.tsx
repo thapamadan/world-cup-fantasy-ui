@@ -26,16 +26,16 @@ export function AppNavbar() {
   const groupName = activeGroup?.name ?? "No group selected";
 
   const handleLogout = async () => {
-    try {
-      await logout();
-    } finally {
-      clearSession();
-      clearActiveGroup();
-      setSessionState(null);
-      setActiveGroupState(null);
-      setMenuOpen(false);
-      router.push("/");
-    }
+    clearSession();
+    clearActiveGroup();
+    setSessionState(null);
+    setActiveGroupState(null);
+    setMenuOpen(false);
+    router.replace("/");
+
+    void logout().catch(() => {
+      // The client session is already cleared, so ignore slow or failed logout responses.
+    });
   };
 
   return (

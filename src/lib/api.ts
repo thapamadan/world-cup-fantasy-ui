@@ -36,6 +36,18 @@ function getAuthHeaderToken(token: string | null | undefined) {
   return token;
 }
 
+function shouldUseSameOriginApiBase(location: Location) {
+  if (location.port === "8000") {
+    return true;
+  }
+
+  if (!location.port && location.protocol === "https:") {
+    return true;
+  }
+
+  return false;
+}
+
 function resolveApiBases() {
   const bases = new Set<string>();
   let sameHostApiBase = "";
@@ -43,9 +55,11 @@ function resolveApiBases() {
   if (typeof window !== "undefined") {
     const { origin, protocol, hostname } = window.location;
     sameHostApiBase = `${protocol}//${hostname}:8000`;
-    // Prefer the current host's backend directly before the frontend origin.
     bases.add(sameHostApiBase);
-    bases.add(origin);
+
+    if (shouldUseSameOriginApiBase(window.location)) {
+      bases.add(origin);
+    }
   }
 
   if (process.env.NEXT_PUBLIC_API_BASE_URL) {
@@ -69,7 +83,9 @@ export function getPreferredApiBase() {
     return process.env.NEXT_PUBLIC_API_BASE_URL;
   }
   if (typeof window !== "undefined") {
-    return window.location.origin;
+    return shouldUseSameOriginApiBase(window.location)
+      ? window.location.origin
+      : `${window.location.protocol}//${window.location.hostname}:8000`;
   }
   return API_BASES[0] ?? "http://127.0.0.1:8000";
 }

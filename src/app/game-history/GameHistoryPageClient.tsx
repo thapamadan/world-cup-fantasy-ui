@@ -16,8 +16,9 @@ import {
   setActiveGroup,
   setSession,
 } from "@/lib/auth";
+import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
 import { readGroupHistoryCache, writeGroupHistoryCache } from "@/lib/predictions-cache";
-import type { GroupHistoryItem } from "@/lib/types";
+import type { GroupHistoryItem, Match } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
 function getPredictionTone(pointsEarned?: number) {
@@ -50,6 +51,43 @@ function getHistoryMatchPriority(item: GroupHistoryItem) {
   }
 
   return 3;
+}
+
+function getMatchLookupKey(match: Pick<Match, "home" | "away" | "kickoffAt">) {
+  return `${match.home}::${match.away}::${match.kickoffAt}`;
+}
+
+function getScoredPoints(
+  prediction: GroupHistoryItem["predictions"][number],
+  result?: Match["result"],
+) {
+  if (typeof prediction.pointsEarned === "number") {
+    return prediction.pointsEarned;
+  }
+
+  if (!result) {
+    return undefined;
+  }
+
+  if (
+    prediction.predicted.home === result.home &&
+    prediction.predicted.away === result.away
+  ) {
+    return 3;
+  }
+
+  const predictedDiff = prediction.predicted.home - prediction.predicted.away;
+  const resultDiff = result.home - result.away;
+
+  if (
+    (predictedDiff === 0 && resultDiff === 0) ||
+    (predictedDiff > 0 && resultDiff > 0) ||
+    (predictedDiff < 0 && resultDiff < 0)
+  ) {
+    return 1;
+  }
+
+  return 0;
 }
 
 export function GameHistoryPageClient() {
@@ -138,8 +176,91 @@ export function GameHistoryPageClient() {
     }
   }, [historyError, router]);
 
-  const items = data?.items ?? [];
-  const members = data?.members ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
+  const members = useMemo(() => data?.members ?? [], [data?.members]);
+
+  const historyDateRange = useMemo(() => {
+    if (items.length === 0) {
+      return null;
+    }
+
+    let earliestKickoff = items[0].match.kickoffAt;
+    let latestKickoff = items[0].match.kickoffAt;
+
+    for (const item of items) {
+      if (item.match.kickoffAt < earliestKickoff) {
+        earliestKickoff = item.match.kickoffAt;
+      }
+
+      if (item.match.kickoffAt > latestKickoff) {
+        latestKickoff = item.match.kickoffAt;
+      }
+    }
+
+    return {
+      dateFrom: earliestKickoff.slice(0, 10),
+      dateTo: latestKickoff.slice(0, 10),
+    };
+  }, [items]);
+
+  const { data: matchesData, error: matchesError } = useSWR(
+    historyDateRange
+      ? `game-history-matches:${historyDateRange.dateFrom}:${historyDateRange.dateTo}`
+      : null,
+    () => fetchMatchesFromProxy(historyDateRange!),
+    {
+      revalidateOnFocus: false,
+    },
+  );
+
+  useEffect(() => {
+    if (!matchesError) {
+      return;
+    }
+
+    setError((current) => current || getDirectMatchesErrorMessage(matchesError));
+  }, [matchesError]);
+
+  const hydratedItems = useMemo(() => {
+    const matches = matchesData?.matches ?? [];
+    if (matches.length === 0) {
+      return items;
+    }
+
+    const matchesById = new Map(matches.map((match) => [match.id, match]));
+    const matchesByLookupKey = new Map(matches.map((match) => [getMatchLookupKey(match), match]));
+
+    return items.map((item) => {
+      const resolvedMatch =
+        matchesById.get(item.match.id) ?? matchesByLookupKey.get(getMatchLookupKey(item.match));
+
+      const resolvedResult = resolvedMatch?.result ?? item.match.result;
+
+      if (!resolvedMatch) {
+        return {
+          ...item,
+          predictions: item.predictions.map((prediction) => ({
+            ...prediction,
+            pointsEarned: getScoredPoints(prediction, resolvedResult),
+          })),
+        };
+      }
+
+      return {
+        ...item,
+        match: {
+          ...item.match,
+          deadline: resolvedMatch.deadline,
+          status: resolvedMatch.result && resolvedMatch.status !== "upcoming" ? "finished" : resolvedMatch.status,
+          result: resolvedResult,
+        },
+        predictions: item.predictions.map((prediction) => ({
+          ...prediction,
+          pointsEarned: getScoredPoints(prediction, resolvedResult),
+        })),
+      };
+    });
+  }, [items, matchesData?.matches]);
 
   const matrix = useMemo(() => {
     const players = new Map<
@@ -165,7 +286,7 @@ export function GameHistoryPageClient() {
       });
     });
 
-    items.forEach((item) => {
+    hydratedItems.forEach((item) => {
       item.predictions.forEach((prediction) => {
         const existing = players.get(prediction.userId) ?? {
           userId: prediction.userId,
@@ -189,11 +310,11 @@ export function GameHistoryPageClient() {
         Number(right.isMe) - Number(left.isMe) ||
         left.name.localeCompare(right.name),
     );
-  }, [items, members]);
+  }, [hydratedItems, members]);
 
   const orderedItems = useMemo(
     () =>
-      [...items].sort((left, right) => {
+      [...hydratedItems].sort((left, right) => {
         const priorityDiff = getHistoryMatchPriority(left) - getHistoryMatchPriority(right);
         if (priorityDiff !== 0) {
           return priorityDiff;
@@ -208,7 +329,7 @@ export function GameHistoryPageClient() {
 
         return leftKickoff - rightKickoff;
       }),
-    [items],
+    [hydratedItems],
   );
 
   return (
@@ -238,13 +359,13 @@ export function GameHistoryPageClient() {
           </div>
         ) : null}
 
-        {!isLoading && items.length === 0 ? (
+        {!isLoading && hydratedItems.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-white/15 bg-white/5 p-6 text-sm text-white/60">
             No visible match history yet.
           </div>
         ) : null}
         
-        {items.length > 0 ? (
+        {hydratedItems.length > 0 ? (
           <MatrixBoard items={orderedItems} players={matrix} />
         ) : null}
       </main>
