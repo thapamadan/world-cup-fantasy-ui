@@ -1,3 +1,10 @@
+export type PredictedScore = {
+  home: number;
+  away: number;
+  winner?: "home" | "away" | "draw";
+  shootoutWinner?: "home" | "away" | null;
+};
+
 export type Match = {
   id: string;
   home: string;
@@ -9,19 +16,28 @@ export type Match = {
   deadline: string;
   status: "upcoming" | "live" | "finished";
   kickoffAt: string;
-  predicted?: { home: number; away: number; winner?: "home" | "away" | "draw" };
+  predicted?: PredictedScore;
   submitted?: boolean;
   result?: { home: number; away: number };
   pointsEarned?: number;
+  shootoutBonus?: number;
+  wentToShootout?: boolean;
   matchday?: number | null;
   stage?: string;
   group?: string | null;
 };
 
+export function isKnockoutStage(stage?: string | null) {
+  if (!stage) return false;
+  const upper = stage.toUpperCase();
+  return !upper.includes("GROUP");
+}
+
 export type MemberPrediction = {
   matchId: string;
-  predicted: { home: number; away: number; winner?: "home" | "away" | "draw" };
+  predicted: PredictedScore;
   pointsEarned?: number;
+  shootoutBonus?: number;
 };
 
 export type AuthUser = {
@@ -52,12 +68,46 @@ export type LeaderboardRow = {
   movement: number;
   exactScores: number;
   predictionCount: number;
+  matchPoints?: number;
+  shootoutBonus?: number;
+  progressionPoints?: number;
   isMe?: boolean;
+};
+
+export type KnockoutPickStatus = "correct" | "eliminated" | "active";
+
+export type KnockoutTeamStatus = {
+  name: string;
+  flag: string;
+  status: KnockoutPickStatus;
+};
+
+export type KnockoutProgressionPoints = {
+  quarterfinalPoints: number;
+  semifinalPoints: number;
+  finalPoints: number;
+  championPoints: number;
+  total: number;
+};
+
+export type KnockoutPrediction = {
+  teams: TeamOption[];
+  quarterfinalists: KnockoutTeamStatus[];
+  semifinalists: KnockoutTeamStatus[];
+  finalists: KnockoutTeamStatus[];
+  champion: KnockoutTeamStatus | null;
+  locked: boolean;
+  lockAt?: string | null;
+  points: KnockoutProgressionPoints;
+  maxQuarterfinalists: number;
+  maxSemifinalists: number;
+  maxFinalists: number;
 };
 
 export type MemberPredictionsResponse = {
   member: AuthUser;
   predictions: Match[];
+  knockout?: KnockoutPrediction;
 };
 
 export type UserPredictionsResponse = {
@@ -68,8 +118,9 @@ export type GroupHistoryPrediction = {
   userId: number;
   name: string;
   initials: string;
-  predicted: { home: number; away: number; winner?: "home" | "away" | "draw" };
+  predicted: PredictedScore;
   pointsEarned?: number;
+  shootoutBonus?: number;
   isMe?: boolean;
 };
 
@@ -89,6 +140,8 @@ export type GroupHistoryResponse = {
   group: Group;
   members: GroupHistoryMember[];
   items: GroupHistoryItem[];
+  playedMatches?: number;
+  totalMatches?: number;
 };
 
 export type TeamOption = {

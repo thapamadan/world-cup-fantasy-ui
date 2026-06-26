@@ -24,9 +24,11 @@ type FootballDataMatch = {
   };
   score?: {
     winner?: string | null;
+    duration?: string | null;
     fullTime?: { home?: number | null; away?: number | null };
     halfTime?: { home?: number | null; away?: number | null };
     extraTime?: { home?: number | null; away?: number | null };
+    penalties?: { home?: number | null; away?: number | null };
   };
 };
 
@@ -63,6 +65,17 @@ function resolveResult(match: FootballDataMatch) {
   }
 
   return undefined;
+}
+
+function resolveWentToShootout(match: FootballDataMatch) {
+  const score = match.score;
+  if (!score) {
+    return false;
+  }
+  if ((score.duration || "").toUpperCase() === "PENALTY_SHOOTOUT") {
+    return true;
+  }
+  return score.penalties?.home != null && score.penalties.away != null;
 }
 
 function resolveStatus(match: FootballDataMatch, kickoffAt: Date) {
@@ -129,6 +142,9 @@ function mapFootballDataMatch(match: FootballDataMatch): Match | null {
     status,
     kickoffAt: match.utcDate,
     result: resolveResult(match),
+    stage: match.stage,
+    group: match.group ?? null,
+    wentToShootout: resolveWentToShootout(match),
   };
 }
 
@@ -196,9 +212,12 @@ export async function fetchMatchesFromProxy(query: FootballDataQuery = {}) {
   }
 
   const queryString = searchParams.toString();
-  const response = await fetch(`/api/football-data/matches${queryString ? `?${queryString}` : ""}`, {
-    cache: "no-store",
-  });
+  const response = await fetch(
+    `/api/football-data/matches${queryString ? `?${queryString}` : ""}`,
+    {
+      cache: "no-store",
+    },
+  );
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;

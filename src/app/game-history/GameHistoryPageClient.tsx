@@ -366,7 +366,12 @@ export function GameHistoryPageClient() {
         ) : null}
         
         {hydratedItems.length > 0 ? (
-          <MatrixBoard items={orderedItems} players={matrix} />
+          <MatrixBoard
+            items={orderedItems}
+            players={matrix}
+            playedMatches={data?.playedMatches}
+            totalMatches={data?.totalMatches}
+          />
         ) : null}
       </main>
     </div>
@@ -380,6 +385,8 @@ function LegendPill({ label, tone }: { label: string; tone: string }) {
 function MatrixBoard({
   items,
   players,
+  playedMatches,
+  totalMatches,
 }: {
   items: GroupHistoryItem[];
   players: Array<{
@@ -390,6 +397,8 @@ function MatrixBoard({
     totalPoints: number;
     predictionsByMatch: Record<string, GroupHistoryItem["predictions"][number]>;
   }>;
+  playedMatches?: number;
+  totalMatches?: number;
 }) {
   return (
     <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[#1a1a1a] shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
@@ -399,7 +408,14 @@ function MatrixBoard({
             <div className="text-xs uppercase tracking-[0.2em] text-white/45">Leaderboard</div>
             <h2 className="mt-1 text-lg font-semibold text-white">Game History</h2>
           </div>
-          <div className="text-sm text-white/45">Player totals across visible matches</div>
+          {typeof playedMatches === "number" && typeof totalMatches === "number" ? (
+            <div className="text-right">
+              <div className="text-lg font-semibold text-white">
+                {playedMatches}/{totalMatches}
+              </div>
+              <div className="text-xs uppercase tracking-[0.2em] text-white/45">Matches played</div>
+            </div>
+          ) : null}
         </div>
       </div>
 

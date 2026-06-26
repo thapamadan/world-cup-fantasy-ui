@@ -8,20 +8,22 @@ import useSWR from "swr";
 
 import { AppNavbar } from "@/components/AppNavbar";
 import { TeamFlag } from "@/components/TeamFlag";
-import {
-  ApiError,
-  fetchGroupMemberPredictions,
-  fetchMe,
-  getApiErrorMessage,
-} from "@/lib/api";
+import { ApiError, fetchGroupMemberPredictions, fetchMe, getApiErrorMessage } from "@/lib/api";
 import { clearActiveGroup, clearSession, getSession, setSession } from "@/lib/auth";
 import {
   getGroupMemberPredictionsCacheKey,
+  type MemberPredictionsCache,
   readMemberPredictionsCache,
   writeMemberPredictionsCache,
 } from "@/lib/predictions-cache";
-import type { AuthUser, Match } from "@/lib/types";
-import { formatMatchDateTimeNepal } from "@/lib/utils";
+import type {
+  AuthUser,
+  KnockoutPickStatus,
+  KnockoutPrediction,
+  KnockoutTeamStatus,
+  Match,
+} from "@/lib/types";
+import { cn, formatMatchDateTimeNepal } from "@/lib/utils";
 
 function sortPredictions(matches: Match[]) {
   return [...matches].sort((left, right) => {
@@ -71,9 +73,10 @@ export default function MemberPredictionsPage() {
     getGroupMemberPredictionsCacheKey(groupId, memberId),
     async () => {
       const response = await fetchGroupMemberPredictions(groupId, memberId);
-      const nextData = {
+      const nextData: MemberPredictionsCache = {
         member: response.member,
         predictions: sortPredictions(response.predictions),
+        knockout: response.knockout,
       };
 
       writeMemberPredictionsCache(groupId, memberId, nextData);
@@ -97,6 +100,7 @@ export default function MemberPredictionsPage() {
 
   const member: AuthUser | null = data?.member ?? null;
   const predictions = data?.predictions ?? [];
+  const knockout = data?.knockout ?? null;
   const errorMessage = error ? getApiErrorMessage(error) : "";
 
   const isCurrentUser = getSession()?.user.id === memberId;
@@ -129,6 +133,8 @@ export default function MemberPredictionsPage() {
           </p>
           {errorMessage ? <p className="mt-3 text-sm text-destructive">{errorMessage}</p> : null}
         </header>
+
+        {knockout ? <KnockoutScorecard knockout={knockout} isCurrentUser={isCurrentUser} /> : null}
 
         {isLoading ? (
           <div className="rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">
@@ -255,5 +261,120 @@ function InfoTile({ label, value }: { label: string; value: string }) {
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 font-semibold">{value}</div>
     </div>
+  );
+}
+
+function statusIcon(status: KnockoutPickStatus) {
+  if (status === "correct") return { icon: "✅", className: "border-success/30 bg-success/10" };
+  if (status === "eliminated")
+    return { icon: "❌", className: "border-destructive/30 bg-destructive/10 opacity-70" };
+  return { icon: "⏳", className: "border-border bg-background/40" };
+}
+
+function KnockoutPickRow({
+  title,
+  perTeam,
+  teams,
+}: {
+  title: string;
+  perTeam: string;
+  teams: KnockoutTeamStatus[];
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-background/30 p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-semibold">{title}</div>
+        <div className="text-[11px] text-muted-foreground">{perTeam}</div>
+      </div>
+      {teams.length === 0 ? (
+        <div className="text-xs text-muted-foreground">No picks</div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {teams.map((team) => {
+            const badge = statusIcon(team.status);
+            return (
+              <span
+                key={`${title}-${team.name}`}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm font-medium",
+                  badge.className,
+                )}
+              >
+                <TeamFlag
+                  team={team.name}
+                  fallback={team.flag}
+                  className="h-3.5 w-5 rounded-sm object-cover"
+                />
+                {team.name}
+                <span className="text-[11px]">{badge.icon}</span>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KnockoutScorecard({
+  knockout,
+  isCurrentUser,
+}: {
+  knockout: KnockoutPrediction;
+  isCurrentUser: boolean;
+}) {
+  const { points } = knockout;
+  const hasPicks =
+    knockout.quarterfinalists.length > 0 ||
+    knockout.semifinalists.length > 0 ||
+    knockout.finalists.length > 0 ||
+    Boolean(knockout.champion);
+
+  if (!hasPicks) {
+    return (
+      <section className="mb-6 rounded-2xl border border-dashed border-border bg-background/20 p-5 text-sm text-muted-foreground">
+        {isCurrentUser
+          ? "You haven't made any knockout bracket picks yet."
+          : "No knockout bracket picks submitted."}
+      </section>
+    );
+  }
+
+  return (
+    <section className="mb-6 rounded-3xl border border-border bg-card p-5 shadow-card">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Knockout bracket</h2>
+          <p className="text-sm text-muted-foreground">
+            ✅ through · ❌ eliminated · ⏳ still active
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+          {points.total} / 19 bonus pts
+        </div>
+      </div>
+      <div className="space-y-3">
+        <KnockoutPickRow
+          title="Quarterfinalists"
+          perTeam={`${points.quarterfinalPoints} pts`}
+          teams={knockout.quarterfinalists}
+        />
+        <KnockoutPickRow
+          title="Semifinalists"
+          perTeam={`${points.semifinalPoints} pts`}
+          teams={knockout.semifinalists}
+        />
+        <KnockoutPickRow
+          title="Finalists"
+          perTeam={`${points.finalPoints} pts`}
+          teams={knockout.finalists}
+        />
+        <KnockoutPickRow
+          title="Champion"
+          perTeam={`${points.championPoints} pts`}
+          teams={knockout.champion ? [knockout.champion] : []}
+        />
+      </div>
+    </section>
   );
 }

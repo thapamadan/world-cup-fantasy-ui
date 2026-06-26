@@ -1,11 +1,20 @@
-import type { AuthUser, Group, GroupHistoryResponse, LeaderboardRow, Match } from "@/lib/types";
+import type {
+  AuthUser,
+  Group,
+  GroupHistoryResponse,
+  KnockoutPrediction,
+  LeaderboardRow,
+  Match,
+} from "@/lib/types";
 
 export const MY_PREDICTIONS_CACHE_KEY = "my-predictions";
 export const WINNER_PREDICTION_CACHE_KEY = "winner-prediction";
+export const KNOCKOUT_PREDICTION_CACHE_KEY = "knockout-prediction";
 
 export type MemberPredictionsCache = {
   member: AuthUser;
   predictions: Match[];
+  knockout?: KnockoutPrediction;
 };
 
 export type DashboardLeaderboardCache = {

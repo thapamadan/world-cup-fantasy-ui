@@ -92,11 +92,17 @@ export default function RecentGamesPage() {
     home: number,
     away: number,
     winner: "home" | "away" | "draw" | null,
+    shootoutWinner: "home" | "away" | null,
   ) => {
     setMatches((current) =>
       current.map((match) =>
         match.id === matchId
-          ? { ...match, predicted: winner ? { home, away, winner } : { home, away } }
+          ? {
+              ...match,
+              predicted: winner
+                ? { home, away, winner, shootoutWinner }
+                : { home, away, shootoutWinner },
+            }
           : match,
       ),
     );

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Lock, X } from "lucide-react";
+import { CheckCircle2, Lock, Trophy, X } from "lucide-react";
 
 import { TeamFlag } from "@/components/TeamFlag";
 import { getApiErrorMessage, savePrediction } from "@/lib/api";
-import type { Match } from "@/lib/types";
+import { isKnockoutStage, type Match } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
 function getWinnerLabel(
@@ -64,11 +64,15 @@ export function PredictionModal({
     home: number,
     away: number,
     winner: "home" | "away" | "draw" | null,
+    shootoutWinner: "home" | "away" | null,
   ) => void;
 }) {
   const matchTime = formatMatchDateTimeNepal(match.kickoffAt);
   const [home, setHome] = useState(match.predicted?.home ?? 0);
   const [away, setAway] = useState(match.predicted?.away ?? 0);
+  const [shootoutWinner, setShootoutWinner] = useState<"home" | "away" | null>(
+    match.predicted?.shootoutWinner ?? null,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const finished = match.status === "finished" && !!match.result;
@@ -76,6 +80,9 @@ export function PredictionModal({
   const scoreHome = finished && match.result ? match.result.home : home;
   const scoreAway = finished && match.result ? match.result.away : away;
   const winnerPick = getWinnerPickFromScore(home, away);
+  const isKnockout = isKnockoutStage(match.stage);
+  const isDrawPredicted = home === away;
+  const needsShootoutPick = isKnockout && isDrawPredicted && !editingLocked;
   const predictedWinnerLabel = getWinnerLabel(
     match.home,
     match.away,
@@ -96,13 +103,22 @@ export function PredictionModal({
         return;
       }
 
+      if (needsShootoutPick && !shootoutWinner) {
+        setError("Pick who wins the penalty shootout.");
+        setSaving(false);
+        return;
+      }
+
+      const resolvedShootoutWinner = isKnockout && isDrawPredicted ? shootoutWinner : null;
+
       await savePrediction({
         match_id: match.id,
         home_score: home,
         away_score: away,
         winner: winnerPick,
+        shootout_winner: resolvedShootoutWinner,
       });
-      onSaved(match.id, home, away, winnerPick);
+      onSaved(match.id, home, away, winnerPick, resolvedShootoutWinner);
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
@@ -170,6 +186,34 @@ export function PredictionModal({
                 type="button"
                 disabled
                 className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${winnerPick === "away" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-muted"}`}
+              >
+                {match.away}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {needsShootoutPick && (
+          <div className="mt-4 rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm">
+            <div className="mb-1 inline-flex items-center gap-2 text-sm font-semibold text-warning">
+              <Trophy className="h-4 w-4" /> Penalty shootout winner
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              A draw in a knockout match goes to penalties. Pick who advances to earn the +1
+              shootout bonus.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setShootoutWinner("home")}
+                className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${shootoutWinner === "home" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-muted"}`}
+              >
+                {match.home}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShootoutWinner("away")}
+                className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${shootoutWinner === "away" ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-muted"}`}
               >
                 {match.away}
               </button>

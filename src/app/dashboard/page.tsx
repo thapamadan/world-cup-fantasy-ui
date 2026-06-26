@@ -24,7 +24,7 @@ const DashboardUpcomingPreview = dynamic(
   () => import("@/components/DashboardUpcomingPreview").then((mod) => mod.DashboardUpcomingPreview),
   { ssr: false },
 );
-import { WinnerPredictionCard } from "@/components/WinnerPredictionCard";
+import { KnockoutBracketCard } from "@/components/KnockoutBracketCard";
 import { TeamFlag } from "@/components/TeamFlag";
 import {
   ApiError,
@@ -110,7 +110,8 @@ export default function DashboardPage() {
     },
   );
   const leaderboard = leaderboardData?.leaderboard ?? cachedLeaderboard?.leaderboard ?? [];
-  const loading = !groupResolved || (resolvedGroupId !== null && !leaderboardData && leaderboardLoading);
+  const loading =
+    !groupResolved || (resolvedGroupId !== null && !leaderboardData && leaderboardLoading);
 
   const previewMatches = useMemo(
     () => mergePredictionsWithMatches(matches, predictionsData?.predictions ?? []),
@@ -256,7 +257,7 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-8">
             <DashboardUpcomingPreview matches={previewMatches} loading={matchesLoading} />
-            <WinnerPredictionCard />
+            <KnockoutBracketCard />
             <GroupInfoCard group={group} />
           </div>
         </div>
@@ -348,6 +349,18 @@ function HeroCard({
             >
               Game history <ArrowRight className="h-4 w-4" />
             </Link>
+            <Link
+              href="/knockout"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-primary-foreground backdrop-blur transition hover:bg-white/10"
+            >
+              Knockout predictions <Trophy className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/points-chart"
+              className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-primary-foreground backdrop-blur transition hover:bg-white/10"
+            >
+              Points chart <TrendingUp className="h-4 w-4" />
+            </Link>
           </div>
         </div>
 
@@ -417,6 +430,9 @@ function LeaderboardCard({
           </h2>
           <p className="text-sm text-muted-foreground">Only members of this group appear here</p>
         </div>
+        <div className="hidden text-right text-[10px] uppercase tracking-wide text-muted-foreground sm:block">
+          Knockout bonus
+        </div>
       </div>
 
       {loading ? (
@@ -470,6 +486,9 @@ function LeaderboardEntry({ row, href }: { row: LeaderboardRow; href: string | n
           {row.predictionCount} predictions submitted - Click to view predictions
         </div>
       </div>
+      <div className="hidden items-center gap-2 sm:flex">
+        <BreakdownPill label="Bonus" value={row.progressionPoints ?? 0} />
+      </div>
       <Movement value={row.movement} />
       <div className="w-16 text-right text-base font-semibold tabular-nums">
         {row.points} <span className="text-xs font-normal text-muted-foreground">pts</span>
@@ -494,6 +513,15 @@ function LeaderboardEntry({ row, href }: { row: LeaderboardRow; href: string | n
     >
       {content}
     </Link>
+  );
+}
+
+function BreakdownPill({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="w-14 rounded-lg bg-muted/60 px-2 py-1 text-center">
+      <div className="text-[9px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-sm font-semibold tabular-nums">{value}</div>
+    </div>
   );
 }
 

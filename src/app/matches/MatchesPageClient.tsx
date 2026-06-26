@@ -117,6 +117,7 @@ export function MatchesPageClient({
     home: number,
     away: number,
     winner: "home" | "away" | "draw" | null,
+    shootoutWinner: "home" | "away" | null,
   ) => {
     void mutatePredictions((current) => {
       if (!current) {
@@ -125,7 +126,7 @@ export function MatchesPageClient({
 
       const nextPrediction = {
         matchId,
-        predicted: winner ? { home, away, winner } : { home, away },
+        predicted: winner ? { home, away, winner, shootoutWinner } : { home, away, shootoutWinner },
       };
       const existingIndex = current.predictions.findIndex(
         (prediction) => prediction.matchId === matchId,

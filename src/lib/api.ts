@@ -3,6 +3,7 @@ import type {
   AuthSession,
   Group,
   GroupHistoryResponse,
+  KnockoutPrediction,
   LeaderboardRow,
   Match,
   MemberPredictionsResponse,
@@ -253,11 +254,28 @@ export async function saveWinnerPrediction(input: { team_name: string }) {
   });
 }
 
+export async function fetchKnockoutPrediction() {
+  return apiFetch<KnockoutPrediction>("/api/predictions/knockout");
+}
+
+export async function saveKnockoutPrediction(input: {
+  quarterfinalists: string[];
+  semifinalists: string[];
+  finalists: string[];
+  champion: string | null;
+}) {
+  return apiFetch<{ message: string; prediction: KnockoutPrediction }>(
+    "/api/predictions/knockout",
+    { method: "POST", body: input },
+  );
+}
+
 export async function savePrediction(input: {
   match_id: string;
   home_score: number;
   away_score: number;
   winner?: "home" | "away" | "draw";
+  shootout_winner?: "home" | "away" | null;
 }) {
   return apiFetch<{
     message: string;
@@ -269,6 +287,7 @@ export async function savePrediction(input: {
       home_score: input.home_score,
       away_score: input.away_score,
       winner: input.winner,
+      shootout_winner: input.shootout_winner ?? null,
     },
   });
 }
