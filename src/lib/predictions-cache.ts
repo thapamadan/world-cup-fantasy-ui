@@ -11,6 +11,45 @@ export const MY_PREDICTIONS_CACHE_KEY = "my-predictions";
 export const WINNER_PREDICTION_CACHE_KEY = "winner-prediction";
 export const KNOCKOUT_PREDICTION_CACHE_KEY = "knockout-prediction";
 
+// The knockout bracket is stored in localStorage (not sessionStorage) so that a
+// freshly-opened tab can render the last-known bracket instantly while SWR
+// revalidates in the background.
+const KNOCKOUT_PREDICTION_STORAGE_KEY = "wow_knockout_prediction_v1";
+
+export function readKnockoutPredictionCache(): KnockoutPrediction | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const rawValue = window.localStorage.getItem(KNOCKOUT_PREDICTION_STORAGE_KEY);
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawValue) as KnockoutPrediction;
+  } catch {
+    window.localStorage.removeItem(KNOCKOUT_PREDICTION_STORAGE_KEY);
+    return null;
+  }
+}
+
+export function writeKnockoutPredictionCache(value: KnockoutPrediction) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(KNOCKOUT_PREDICTION_STORAGE_KEY, JSON.stringify(value));
+}
+
+export function clearKnockoutPredictionCache() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(KNOCKOUT_PREDICTION_STORAGE_KEY);
+}
+
 export type MemberPredictionsCache = {
   member: AuthUser;
   predictions: Match[];

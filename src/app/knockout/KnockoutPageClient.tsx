@@ -3,21 +3,33 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, Clock, Lock, Trophy } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, Lock, Trophy, Users } from "lucide-react";
 import useSWR from "swr";
 
 import { AppNavbar } from "@/components/AppNavbar";
 import { TeamFlag } from "@/components/TeamFlag";
 import {
   ApiError,
+  fetchGroupKnockoutPredictions,
   fetchKnockoutPrediction,
   fetchMe,
   getApiErrorMessage,
   saveKnockoutPrediction,
 } from "@/lib/api";
-import { clearActiveGroup, clearSession, getSession, setSession } from "@/lib/auth";
-import { KNOCKOUT_PREDICTION_CACHE_KEY } from "@/lib/predictions-cache";
-import type { KnockoutPickStatus, KnockoutPrediction, TeamOption } from "@/lib/types";
+import { clearActiveGroup, clearSession, getActiveGroup, getSession, setSession } from "@/lib/auth";
+import {
+  clearKnockoutPredictionCache,
+  KNOCKOUT_PREDICTION_CACHE_KEY,
+  readKnockoutPredictionCache,
+  writeKnockoutPredictionCache,
+} from "@/lib/predictions-cache";
+import type {
+  GroupKnockoutMember,
+  KnockoutPickStatus,
+  KnockoutPrediction,
+  KnockoutTeamStatus,
+  TeamOption,
+} from "@/lib/types";
 import { cn, formatMatchDateTimeNepal } from "@/lib/utils";
 
 type TierKey = "quarterfinalists" | "semifinalists" | "finalists";
@@ -71,12 +83,17 @@ function buildStatusMap(prediction?: KnockoutPrediction) {
 
 export function KnockoutPageClient() {
   const router = useRouter();
+  // Seed SWR with the last-known bracket from localStorage so the page paints
+  // immediately (even in a new tab) while the network request revalidates.
+  const cachedPrediction = useMemo(() => readKnockoutPredictionCache() ?? undefined, []);
   const {
     data: prediction,
     error: fetchError,
     mutate,
   } = useSWR(KNOCKOUT_PREDICTION_CACHE_KEY, fetchKnockoutPrediction, {
     revalidateOnFocus: false,
+    fallbackData: cachedPrediction,
+    keepPreviousData: true,
   });
 
   const [quarterfinalists, setQuarterfinalists] = useState<string[]>([]);
@@ -104,10 +121,13 @@ export function KnockoutPageClient() {
     setSemifinalists(prediction.semifinalists.map((team) => team.name));
     setFinalists(prediction.finalists.map((team) => team.name));
     setChampion(prediction.champion?.name ?? null);
+    // Keep the cross-tab cache in sync with the freshest bracket data.
+    writeKnockoutPredictionCache(prediction);
   }, [prediction]);
 
   useEffect(() => {
     if (fetchError instanceof ApiError && fetchError.status === 401) {
+      clearKnockoutPredictionCache();
       clearSession();
       clearActiveGroup();
       router.push("/");
@@ -117,6 +137,15 @@ export function KnockoutPageClient() {
   const locked = prediction?.locked ?? false;
   const teams = prediction?.teams ?? [];
   const statusMap = useMemo(() => buildStatusMap(prediction), [prediction]);
+
+  // Once the bracket locks, reveal what everyone in the active group predicted.
+  const activeGroup = getActiveGroup();
+  const { data: groupPredictions } = useSWR(
+    locked && activeGroup ? ["group-knockout-predictions", activeGroup.id] : null,
+    () => fetchGroupKnockoutPredictions(activeGroup!.id),
+    { revalidateOnFocus: false },
+  );
+  const groupMembers = groupPredictions?.members ?? [];
 
   const tierState: Record<TierKey, [string[], (value: string[]) => void, number]> = {
     quarterfinalists: [quarterfinalists, setQuarterfinalists, prediction?.maxQuarterfinalists ?? 8],
@@ -363,6 +392,29 @@ export function KnockoutPageClient() {
                 {saving ? "Saving…" : "Save knockout predictions"}
               </button>
             ) : null}
+
+            {locked && activeGroup ? (
+              <section className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-primary" />
+                  <h2 className="text-lg font-semibold tracking-tight">
+                    Everyone&apos;s bracket picks
+                  </h2>
+                  <span className="text-xs text-muted-foreground">{activeGroup.name}</span>
+                </div>
+                {groupMembers.length === 0 ? (
+                  <div className="rounded-2xl bg-muted/40 p-4 text-sm text-muted-foreground">
+                    Loading group predictions…
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {groupMembers.map((member) => (
+                      <MemberKnockoutCard key={member.userId} member={member} />
+                    ))}
+                  </div>
+                )}
+              </section>
+            ) : null}
           </>
         )}
       </main>
@@ -604,6 +656,87 @@ function TeamGrid({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function MemberKnockoutCard({ member }: { member: GroupKnockoutMember }) {
+  return (
+    <article
+      className={cn(
+        "rounded-3xl border bg-card p-5 shadow-card",
+        member.isMe ? "border-primary/40 ring-1 ring-primary/20" : "border-border",
+      )}
+    >
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+            {member.initials}
+          </span>
+          <span className="text-sm font-semibold">{member.name}</span>
+          {member.isMe ? (
+            <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+              You
+            </span>
+          ) : null}
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-[11px] font-semibold text-muted-foreground">
+          <Trophy className="h-3.5 w-3.5 text-primary" /> {member.points.total} pts
+        </span>
+      </div>
+
+      <div className="space-y-2.5">
+        <PickRow label="Champion" teams={member.champion ? [member.champion] : []} highlight />
+        <PickRow label="Finalists" teams={member.finalists} />
+        <PickRow label="Semifinalists" teams={member.semifinalists} />
+        <PickRow label="Quarterfinalists" teams={member.quarterfinalists} />
+      </div>
+    </article>
+  );
+}
+
+function PickRow({
+  label,
+  teams,
+  highlight = false,
+}: {
+  label: string;
+  teams: KnockoutTeamStatus[];
+  highlight?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[7.5rem_1fr] items-start gap-2">
+      <span className="pt-1 text-xs font-semibold text-muted-foreground">{label}</span>
+      <div className="flex flex-wrap gap-1.5">
+        {teams.length === 0 ? (
+          <span className="text-xs text-muted-foreground">—</span>
+        ) : (
+          teams.map((team) => {
+            const badge = statusBadge(team.status);
+            return (
+              <span
+                key={team.name}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-medium",
+                  highlight ? "border-gold/50 bg-gold/5" : "border-border bg-background/50",
+                )}
+              >
+                <TeamFlag
+                  team={team.name}
+                  fallback={team.flag}
+                  className="h-3.5 w-5 rounded-sm object-cover"
+                />
+                {team.name}
+                <span
+                  className={cn("rounded-full px-1 py-0.5 text-[9px] font-bold", badge.className)}
+                >
+                  {badge.icon}
+                </span>
+              </span>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

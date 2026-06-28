@@ -104,6 +104,23 @@ export type KnockoutPrediction = {
   maxFinalists: number;
 };
 
+export type GroupKnockoutMember = {
+  userId: number;
+  name: string;
+  initials: string;
+  isMe: boolean;
+  quarterfinalists: KnockoutTeamStatus[];
+  semifinalists: KnockoutTeamStatus[];
+  finalists: KnockoutTeamStatus[];
+  champion: KnockoutTeamStatus | null;
+  points: KnockoutProgressionPoints;
+};
+
+export type GroupKnockoutPredictions = {
+  locked: boolean;
+  members: GroupKnockoutMember[];
+};
+
 export type MemberPredictionsResponse = {
   member: AuthUser;
   predictions: Match[];

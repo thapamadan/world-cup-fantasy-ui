@@ -3,6 +3,7 @@ import type {
   AuthSession,
   Group,
   GroupHistoryResponse,
+  GroupKnockoutPredictions,
   KnockoutPrediction,
   LeaderboardRow,
   Match,
@@ -318,4 +319,10 @@ export async function fetchGroupMemberPredictions(groupId: number, memberId: num
 
 export async function fetchGroupHistory(groupId: number) {
   return apiFetch<GroupHistoryResponse>(`/api/groups/${groupId}/history`);
+}
+
+export async function fetchGroupKnockoutPredictions(groupId: number) {
+  return apiFetch<GroupKnockoutPredictions>(
+    `/api/groups/${groupId}/knockout-predictions`,
+  );
 }

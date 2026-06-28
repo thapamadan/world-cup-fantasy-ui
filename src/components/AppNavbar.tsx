@@ -8,6 +8,7 @@ import { logout } from "@/lib/api";
 import type { Group, AuthSession } from "@/lib/types";
 import { clearActiveGroup, clearSession, getActiveGroup, getSession } from "@/lib/auth";
 import { BRAND_SUBTITLE, BRAND_TITLE } from "@/lib/branding";
+import { clearKnockoutPredictionCache } from "@/lib/predictions-cache";
 
 export function AppNavbar() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export function AppNavbar() {
   const handleLogout = async () => {
     clearSession();
     clearActiveGroup();
+    clearKnockoutPredictionCache();
     setSessionState(null);
     setActiveGroupState(null);
     setMenuOpen(false);

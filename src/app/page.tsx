@@ -21,6 +21,7 @@ import {
 import { BRAND_SUBTITLE, BRAND_TITLE } from "@/lib/branding";
 import { clearActiveGroup, clearSession, setActiveGroup, setSession } from "@/lib/auth";
 import { prefetchGroupHistory } from "@/lib/group-history-prefetch";
+import { prefetchKnockoutPrediction } from "@/lib/knockout-prefetch";
 
 export default function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
@@ -42,6 +43,7 @@ export default function AuthPage() {
 
   const completeAuth = async (session: Awaited<ReturnType<typeof login>>) => {
     setSession(session);
+    void prefetchKnockoutPrediction();
     const groupsResponse = await fetchMyGroups();
     if (groupsResponse.groups.length > 0) {
       setActiveGroup(groupsResponse.groups[0]);
@@ -80,6 +82,7 @@ export default function AuthPage() {
           return fetchMe().then(async (response) => {
             if (cancelled) return;
             setSession({ token: "cookie-session", user: response.user });
+            void prefetchKnockoutPrediction();
             const groupsResponse = await fetchMyGroups();
             if (cancelled) return;
             if (groupsResponse.groups.length > 0) {
