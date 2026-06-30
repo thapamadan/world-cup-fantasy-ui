@@ -18,12 +18,20 @@ import {
 } from "@/lib/auth";
 import { fetchMatchesFromProxy, getDirectMatchesErrorMessage } from "@/lib/football-data";
 import { readGroupHistoryCache, writeGroupHistoryCache } from "@/lib/predictions-cache";
-import type { GroupHistoryItem, Match } from "@/lib/types";
+import { isKnockoutStage, type GroupHistoryItem, type Match } from "@/lib/types";
 import { formatMatchDateTimeNepal } from "@/lib/utils";
 
 function getPredictionTone(pointsEarned?: number) {
+  if (pointsEarned === 4) {
+    return "bg-[#eef2f7] text-[#0f172a]";
+  }
+
   if (pointsEarned === 3) {
     return "bg-[#b7f17a] text-[#244100]";
+  }
+
+  if (pointsEarned === 2) {
+    return "bg-[#7c9dff] text-[#0a1f66]";
   }
 
   if (pointsEarned === 1) {
@@ -35,6 +43,25 @@ function getPredictionTone(pointsEarned?: number) {
   }
 
   return "bg-white/10 text-white/70";
+}
+
+// When a player predicts a draw, they also name the side they expect to win the
+// penalty shootout. Surface that pick so it's always visible — we only care
+// about what was predicted here, not whether it matched the result (the actual
+// penalty winner is highlighted in the table header).
+function getPredictedShootoutSide(
+  prediction: GroupHistoryItem["predictions"][number],
+): "home" | "away" | null {
+  const predictedSide = prediction.predicted.shootoutWinner;
+  const isDrawPrediction =
+    prediction.predicted.winner === "draw" ||
+    prediction.predicted.home === prediction.predicted.away;
+
+  if (!predictedSide || !isDrawPrediction) {
+    return null;
+  }
+
+  return predictedSide;
 }
 
 function getHistoryMatchPriority(item: GroupHistoryItem) {
@@ -253,6 +280,9 @@ export function GameHistoryPageClient() {
           deadline: resolvedMatch.deadline,
           status: resolvedMatch.result && resolvedMatch.status !== "upcoming" ? "finished" : resolvedMatch.status,
           result: resolvedResult,
+          wentToShootout: resolvedMatch.wentToShootout ?? item.match.wentToShootout,
+          shootoutWinner: resolvedMatch.shootoutWinner ?? item.match.shootoutWinner,
+          winnerTeam: resolvedMatch.winnerTeam ?? item.match.winnerTeam,
         },
         predictions: item.predictions.map((prediction) => ({
           ...prediction,
@@ -347,7 +377,9 @@ export function GameHistoryPageClient() {
             {error ? <p className="mt-3 text-sm text-rose-400">{error}</p> : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-white/70">
+            <LegendPill label="4 pts exact + penalty" tone="bg-[#eef2f7] text-[#0f172a]" />
             <LegendPill label="3 pts exact score" tone="bg-[#b7f17a] text-[#244100]" />
+            <LegendPill label="2 pts outcome + penalty" tone="bg-[#7c9dff] text-[#0a1f66]" />
             <LegendPill label="1 pt correct outcome" tone="bg-[#9ec8ff] text-[#0d356e]" />
             <LegendPill label="0 pts wrong" tone="bg-[#ffb4c1] text-[#6a1020]" />
           </div>
@@ -433,7 +465,32 @@ function MatrixBoard({
                       {item.match.home} vs {item.match.away}
                     </div>
                     <div className="mt-1 text-base font-semibold text-white">
-                      {item.match.result ? `${item.match.result.home}-${item.match.result.away}` : "-----"}
+                      {item.match.result ? (
+                        (() => {
+                          const { home, away } = item.match.result;
+                          // For a knockout match that ended level and went to
+                          // penalties, tint only the penalty winner's digit green.
+                          const penaltyWinner =
+                            isKnockoutStage(item.match.stage) &&
+                            home === away &&
+                            (item.match.wentToShootout || item.match.shootoutWinner)
+                              ? item.match.shootoutWinner ?? null
+                              : null;
+                          return (
+                            <>
+                              <span className={penaltyWinner === "home" ? "text-[#16a34a]" : undefined}>
+                                {home}
+                              </span>
+                              <span className="text-white/60">-</span>
+                              <span className={penaltyWinner === "away" ? "text-[#16a34a]" : undefined}>
+                                {away}
+                              </span>
+                            </>
+                          );
+                        })()
+                      ) : (
+                        "-----"
+                      )}
                     </div>
                   </th>
                 );
@@ -461,13 +518,22 @@ function MatrixBoard({
                   {items.map((item) => {
                     const prediction = player.predictionsByMatch[item.match.id];
                     const showPoints = item.match.status === "finished";
+                    const predictedShootoutSide = prediction
+                      ? getPredictedShootoutSide(prediction)
+                      : null;
 
                     return (
                       <td key={`${player.userId}-${item.match.id}`} className="border-b border-l border-white/10 px-2 py-3 align-middle text-center">
                         {prediction ? (
                           <div className="inline-flex min-w-[66px] flex-col items-center gap-1 rounded-xl bg-white/[0.03] px-2 py-2">
                             <div className="text-base font-semibold text-white">
-                              {prediction.predicted.home}-{prediction.predicted.away}
+                              <span className={predictedShootoutSide === "home" ? "text-[#f3c742]" : undefined}>
+                                {prediction.predicted.home}
+                              </span>
+                              <span className="text-white/60">-</span>
+                              <span className={predictedShootoutSide === "away" ? "text-[#f3c742]" : undefined}>
+                                {prediction.predicted.away}
+                              </span>
                             </div>
                             {showPoints && typeof prediction.pointsEarned === "number" ? (
                               <span

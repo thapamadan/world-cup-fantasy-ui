@@ -8,6 +8,23 @@ const LIVE_SOURCE_STATUSES = new Set(["IN_PLAY", "PAUSED", "SUSPENDED"]);
 
 const teamFlags = new Map(WORLD_CUP_TEAMS.map((team) => [team.name, team.flag]));
 
+// Manual corrections for finished matches the upstream feed reports incompletely.
+// Mirrors MATCH_RESULT_OVERRIDES in the backend (app/matches.py): Netherlands vs
+// Morocco (537418) actually finished 1-1 with Morocco advancing on penalties, but
+// football-data.org returns 0-0 with no shootout winner. Remove once the feed is
+// fixed upstream.
+const MATCH_RESULT_OVERRIDES: Record<
+  string,
+  { result: { home: number; away: number }; wentToShootout: boolean; shootoutWinner: "home" | "away" | null; winnerTeam: string }
+> = {
+  "537418": {
+    result: { home: 1, away: 1 },
+    wentToShootout: true,
+    shootoutWinner: "away",
+    winnerTeam: "Morocco",
+  },
+};
+
 type FootballDataMatch = {
   id?: number | string;
   utcDate?: string;
@@ -119,9 +136,11 @@ function mapFootballDataMatch(match: FootballDataMatch): Match | null {
   const away = resolveTeamName(match.awayTeam, "Away TBD");
   const kickoffAt = new Date(match.utcDate);
   const status = resolveStatus(match, kickoffAt);
+  const id = String(match.id ?? `${home}-${away}-${match.utcDate}`);
+  const override = status === "finished" ? MATCH_RESULT_OVERRIDES[id] : undefined;
 
   return {
-    id: String(match.id ?? `${home}-${away}-${match.utcDate}`),
+    id,
     home,
     away,
     homeFlag: teamFlags.get(home) ?? "",
@@ -141,10 +160,12 @@ function mapFootballDataMatch(match: FootballDataMatch): Match | null {
     deadline: resolveDeadlineLabel(status, kickoffAt),
     status,
     kickoffAt: match.utcDate,
-    result: resolveResult(match),
+    result: override?.result ?? resolveResult(match),
     stage: match.stage,
     group: match.group ?? null,
-    wentToShootout: resolveWentToShootout(match),
+    wentToShootout: override?.wentToShootout ?? resolveWentToShootout(match),
+    shootoutWinner: override?.shootoutWinner ?? null,
+    winnerTeam: override?.winnerTeam ?? null,
   };
 }
 

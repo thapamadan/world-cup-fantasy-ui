@@ -22,6 +22,9 @@ export type Match = {
   pointsEarned?: number;
   shootoutBonus?: number;
   wentToShootout?: boolean;
+  /** Actual shootout winner expressed as a side, so the UI can highlight it. */
+  shootoutWinner?: "home" | "away" | null;
+  winnerTeam?: string | null;
   matchday?: number | null;
   stage?: string;
   group?: string | null;
