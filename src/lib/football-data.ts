@@ -8,23 +8,6 @@ const LIVE_SOURCE_STATUSES = new Set(["IN_PLAY", "PAUSED", "SUSPENDED"]);
 
 const teamFlags = new Map(WORLD_CUP_TEAMS.map((team) => [team.name, team.flag]));
 
-// Manual corrections for finished matches the upstream feed reports incompletely.
-// Mirrors MATCH_RESULT_OVERRIDES in the backend (app/matches.py): Netherlands vs
-// Morocco (537418) actually finished 1-1 with Morocco advancing on penalties, but
-// football-data.org returns 0-0 with no shootout winner. Remove once the feed is
-// fixed upstream.
-const MATCH_RESULT_OVERRIDES: Record<
-  string,
-  { result: { home: number; away: number }; wentToShootout: boolean; shootoutWinner: "home" | "away" | null; winnerTeam: string }
-> = {
-  "537418": {
-    result: { home: 1, away: 1 },
-    wentToShootout: true,
-    shootoutWinner: "away",
-    winnerTeam: "Morocco",
-  },
-};
-
 type FootballDataMatch = {
   id?: number | string;
   utcDate?: string;
@@ -44,6 +27,7 @@ type FootballDataMatch = {
     duration?: string | null;
     fullTime?: { home?: number | null; away?: number | null };
     halfTime?: { home?: number | null; away?: number | null };
+    regularTime?: { home?: number | null; away?: number | null };
     extraTime?: { home?: number | null; away?: number | null };
     penalties?: { home?: number | null; away?: number | null };
   };
@@ -69,13 +53,47 @@ function resolveTeamName(
   return team?.name || team?.shortName || fallback;
 }
 
+// football-data.org reports a shootout match's `fullTime` as the on-pitch score
+// combined with the penalty tally (a 1-1 won 3-2 on penalties comes back as
+// fullTime 4-3 with penalties 3-2). Subtract the penalties back out, in place,
+// so `fullTime` holds the real score and stays separate from the shootout. The
+// guards make it safe and idempotent: it only touches actual shootouts and skips
+// the subtraction if either side would go negative (which is what a feed that has
+// already separated the two looks like), so re-running it never corrupts a value.
+function excludeShootoutPenalties(score: NonNullable<FootballDataMatch["score"]>) {
+  if ((score.duration || "").toUpperCase() !== "PENALTY_SHOOTOUT") {
+    return;
+  }
+  const fullTime = score.fullTime;
+  const penalties = score.penalties;
+  if (
+    fullTime?.home == null ||
+    fullTime.away == null ||
+    penalties?.home == null ||
+    penalties.away == null
+  ) {
+    return;
+  }
+  const strippedHome = Number(fullTime.home) - Number(penalties.home);
+  const strippedAway = Number(fullTime.away) - Number(penalties.away);
+  if (strippedHome < 0 || strippedAway < 0) {
+    return;
+  }
+  fullTime.home = strippedHome;
+  fullTime.away = strippedAway;
+}
+
 function resolveResult(match: FootballDataMatch) {
   const score = match.score;
   if (!score) {
     return undefined;
   }
 
-  for (const candidate of [score.extraTime, score.fullTime, score.halfTime]) {
+  // Pull the penalty shootout out of fullTime so it holds the actual on-pitch
+  // score, then read fullTime first as it now carries the clean final score.
+  excludeShootoutPenalties(score);
+
+  for (const candidate of [score.fullTime, score.regularTime, score.extraTime, score.halfTime]) {
     if (candidate?.home != null && candidate.away != null) {
       return { home: Number(candidate.home), away: Number(candidate.away) };
     }
@@ -93,6 +111,68 @@ function resolveWentToShootout(match: FootballDataMatch) {
     return true;
   }
   return score.penalties?.home != null && score.penalties.away != null;
+}
+
+function resolveWinnerTeam(
+  match: FootballDataMatch,
+  home: string,
+  away: string,
+  result: { home: number; away: number } | undefined,
+): string | null {
+  const winner = match.score?.winner;
+  if (winner) {
+    const value = String(winner).toUpperCase();
+    if (value === "HOME_TEAM") {
+      return home;
+    }
+    if (value === "AWAY_TEAM") {
+      return away;
+    }
+    if (value === "DRAW") {
+      return null;
+    }
+  }
+  if (!result) {
+    return null;
+  }
+  if (result.home > result.away) {
+    return home;
+  }
+  if (result.away > result.home) {
+    return away;
+  }
+  return null;
+}
+
+// Express the shootout winner as a side so the UI can highlight it. In a
+// shootout the overall winner is the side that converted more penalties, so
+// reuse the already-resolved winnerTeam, falling back to the penalty tally.
+function resolveShootoutWinner(
+  match: FootballDataMatch,
+  home: string,
+  away: string,
+  wentToShootout: boolean,
+  winnerTeam: string | null,
+): "home" | "away" | null {
+  if (!wentToShootout) {
+    return null;
+  }
+  if (winnerTeam === home) {
+    return "home";
+  }
+  if (winnerTeam === away) {
+    return "away";
+  }
+  const penalties = match.score?.penalties;
+  if (penalties?.home != null && penalties.away != null) {
+    if (Number(penalties.home) > Number(penalties.away)) {
+      return "home";
+    }
+    if (Number(penalties.away) > Number(penalties.home)) {
+      return "away";
+    }
+  }
+  return null;
 }
 
 function resolveStatus(match: FootballDataMatch, kickoffAt: Date) {
@@ -137,7 +217,11 @@ function mapFootballDataMatch(match: FootballDataMatch): Match | null {
   const kickoffAt = new Date(match.utcDate);
   const status = resolveStatus(match, kickoffAt);
   const id = String(match.id ?? `${home}-${away}-${match.utcDate}`);
-  const override = status === "finished" ? MATCH_RESULT_OVERRIDES[id] : undefined;
+
+  const result = resolveResult(match);
+  const wentToShootout = resolveWentToShootout(match);
+  const winnerTeam = resolveWinnerTeam(match, home, away, result);
+  const shootoutWinner = resolveShootoutWinner(match, home, away, wentToShootout, winnerTeam);
 
   return {
     id,
@@ -160,12 +244,12 @@ function mapFootballDataMatch(match: FootballDataMatch): Match | null {
     deadline: resolveDeadlineLabel(status, kickoffAt),
     status,
     kickoffAt: match.utcDate,
-    result: override?.result ?? resolveResult(match),
+    result,
     stage: match.stage,
     group: match.group ?? null,
-    wentToShootout: override?.wentToShootout ?? resolveWentToShootout(match),
-    shootoutWinner: override?.shootoutWinner ?? null,
-    winnerTeam: override?.winnerTeam ?? null,
+    wentToShootout,
+    shootoutWinner,
+    winnerTeam,
   };
 }
 
